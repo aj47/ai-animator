@@ -29,6 +29,19 @@ export enum AppState {
   ERROR = 'ERROR'
 }
 
+// Generation pipeline status
+export interface GenerationPipelineState {
+  isRunning: boolean;
+  isPaused: boolean;
+  currentPhase: 'idle' | 'prompts' | 'images' | 'videos' | 'complete';
+  progress: {
+    promptsGenerated: number;
+    imagesGenerated: number;
+    videosGenerated: number;
+    totalSegments: number;
+  };
+}
+
 // Deprecated but kept for type safety if needed
 export interface VeoPrompt {
   id: string;

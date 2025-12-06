@@ -1,10 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
-import { AppState, AnalysisResult, Segment } from './types';
-import VideoUploader from './components/VideoUploader';
-import PromptSelector from './components/PromptSelector'; // Now acts as Timeline View
-import VeoGenerator from './components/VeoGenerator'; // Now acts as Detail View
-import TimelineEditor from './components/TimelineEditor'; // Video editor timeline view
+import React, { useState, useEffect, useRef } from 'react';
+import { AppState, AnalysisResult, Segment, GenerationPipelineState } from './types';
+import TimelineLanding from './components/TimelineLanding';
+import PromptSelector from './components/PromptSelector';
+import VeoGenerator from './components/VeoGenerator';
+import TimelineEditor from './components/TimelineEditor';
 import { fileToBase64, extractFrameFromVideo, getClosestAspectRatio, formatTime } from './utils/videoUtils';
 import { analyzeVideoContent, generateImageAsset, generateVeoAnimation, checkApiKey, promptApiKey } from './services/geminiService';
 import { Zap, AlertTriangle, Key, Film } from 'lucide-react';
@@ -13,16 +13,25 @@ const App: React.FC = () => {
   const [state, setState] = useState<AppState>(AppState.IDLE);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
-  
-  const [videoAspectRatio, setVideoAspectRatio] = useState<string>("16:9"); 
+
+  const [videoAspectRatio, setVideoAspectRatio] = useState<string>("16:9");
 
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [activeSegment, setActiveSegment] = useState<Segment | null>(null);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
-  
+
   const [statusMessage, setStatusMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [hasKey, setHasKey] = useState(false);
+
+  // Generation pipeline state
+  const [pipelineState, setPipelineState] = useState<GenerationPipelineState>({
+    isRunning: false,
+    isPaused: false,
+    currentPhase: 'idle',
+    progress: { promptsGenerated: 0, imagesGenerated: 0, videosGenerated: 0, totalSegments: 0 }
+  });
+  const stopGenerationRef = useRef(false);
 
   useEffect(() => {
     checkApiKey().then(setHasKey);
@@ -40,11 +49,16 @@ const App: React.FC = () => {
     }
   };
 
+  const handleStopGeneration = () => {
+    stopGenerationRef.current = true;
+    setPipelineState(prev => ({ ...prev, isRunning: false, isPaused: true }));
+  };
+
   const handleFileSelect = async (file: File) => {
     if (!hasKey) {
         await handleConnectKey();
         const keyNow = await checkApiKey();
-        if(!keyNow) return; 
+        if(!keyNow) return;
     }
 
     setVideoFile(file);
@@ -54,6 +68,7 @@ const App: React.FC = () => {
     setState(AppState.ANALYZING);
     setError(null);
     setStatusMessage("Pre-processing video...");
+    stopGenerationRef.current = false;
 
     try {
       // 1. Get Aspect Ratio from initial frame (0s)
@@ -68,12 +83,123 @@ const App: React.FC = () => {
       setStatusMessage("Gemini is analyzing the timeline for topics...");
       const result = await analyzeVideoContent(base64Video, file.type);
       setAnalysis(result);
-      setState(AppState.TIMELINE);
+      setState(AppState.IDLE); // Stay on timeline landing
+
+      // 4. Initialize pipeline state
+      setPipelineState({
+        isRunning: true,
+        isPaused: false,
+        currentPhase: 'prompts',
+        progress: { promptsGenerated: result.segments.length, imagesGenerated: 0, videosGenerated: 0, totalSegments: result.segments.length }
+      });
+
+      // 5. Start automatic generation pipeline
+      await runAutomaticPipeline(result, url, aspectRatio);
+
     } catch (err: any) {
       console.error(err);
       setError(err.message || "Failed to analyze video.");
       setState(AppState.ERROR);
     }
+  };
+
+  // Automatic generation pipeline - runs after video analysis
+  const runAutomaticPipeline = async (analysisResult: AnalysisResult, url: string, aspectRatio: string) => {
+    const segments = analysisResult.segments;
+
+    // Phase 1: Generate all images
+    setPipelineState(prev => ({ ...prev, currentPhase: 'images' }));
+
+    for (let i = 0; i < segments.length; i++) {
+      if (stopGenerationRef.current) break;
+
+      const segment = segments[i];
+      if (segment.status !== 'idle') continue;
+
+      try {
+        // Update status to generating
+        setAnalysis(prev => prev ? ({
+          ...prev,
+          segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'generating-image' } : s)
+        }) : null);
+
+        const { base64 } = await extractFrameFromVideo(url, segment.timestamp);
+        const imageUri = await generateImageAsset(segment.prompt, base64, aspectRatio);
+
+        setAnalysis(prev => prev ? ({
+          ...prev,
+          segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'image-success', imageUrl: imageUri } : s)
+        }) : null);
+
+        setPipelineState(prev => ({
+          ...prev,
+          progress: { ...prev.progress, imagesGenerated: prev.progress.imagesGenerated + 1 }
+        }));
+
+      } catch (err: any) {
+        console.error(`Failed to generate image for segment ${segment.id}:`, err);
+        setAnalysis(prev => prev ? ({
+          ...prev,
+          segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'error', error: err.message } : s)
+        }) : null);
+      }
+    }
+
+    if (stopGenerationRef.current) {
+      setPipelineState(prev => ({ ...prev, isRunning: false }));
+      return;
+    }
+
+    // Phase 2: Generate all videos
+    setPipelineState(prev => ({ ...prev, currentPhase: 'videos' }));
+
+    // Get updated analysis state for video generation
+    const currentAnalysis = await new Promise<AnalysisResult | null>(resolve => {
+      setAnalysis(prev => {
+        resolve(prev);
+        return prev;
+      });
+    });
+
+    if (!currentAnalysis) return;
+
+    for (let i = 0; i < currentAnalysis.segments.length; i++) {
+      if (stopGenerationRef.current) break;
+
+      const segment = currentAnalysis.segments[i];
+      if (segment.status !== 'image-success' || !segment.imageUrl) continue;
+
+      try {
+        setAnalysis(prev => prev ? ({
+          ...prev,
+          segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'generating-video' } : s)
+        }) : null);
+
+        const base64Data = segment.imageUrl.split(',')[1];
+        const mimeType = segment.imageUrl.split(':')[1].split(';')[0];
+        const videoUri = await generateVeoAnimation(segment.animationPrompt, base64Data, mimeType, aspectRatio);
+
+        setAnalysis(prev => prev ? ({
+          ...prev,
+          segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'video-success', videoUrl: videoUri } : s)
+        }) : null);
+
+        setPipelineState(prev => ({
+          ...prev,
+          progress: { ...prev.progress, videosGenerated: prev.progress.videosGenerated + 1 }
+        }));
+
+      } catch (err: any) {
+        console.error(`Failed to generate video for segment ${segment.id}:`, err);
+        setAnalysis(prev => prev ? ({
+          ...prev,
+          segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'error', error: err.message } : s)
+        }) : null);
+      }
+    }
+
+    // Complete
+    setPipelineState(prev => ({ ...prev, isRunning: false, currentPhase: 'complete' }));
   };
 
   const handleGenerateSegmentImage = async (segment: Segment): Promise<string | null> => {
@@ -230,7 +356,7 @@ const App: React.FC = () => {
 
   const handleBackToTimeline = () => {
     setActiveSegment(null);
-    setState(AppState.TIMELINE);
+    setState(AppState.IDLE); // Go back to timeline landing
   };
 
   const handleOpenTimelineEditor = () => {
@@ -238,7 +364,7 @@ const App: React.FC = () => {
   };
 
   const handleBackFromEditor = () => {
-    setState(AppState.TIMELINE);
+    setState(AppState.IDLE); // Go back to timeline landing
   };
 
   const handleUpdateSegmentPrompts = (segmentId: string, prompt: string, animationPrompt: string) => {
@@ -306,63 +432,81 @@ const App: React.FC = () => {
     setActiveSegment(null);
     setError(null);
     setIsBatchProcessing(false);
+    stopGenerationRef.current = true;
+    setPipelineState({
+      isRunning: false,
+      isPaused: false,
+      currentPhase: 'idle',
+      progress: { promptsGenerated: 0, imagesGenerated: 0, videosGenerated: 0, totalSegments: 0 }
+    });
   };
 
+  // Timeline-first rendering: show TimelineLanding as main view for IDLE and ANALYZING states
+  // Other views (DETAIL_VIEW, TIMELINE_EDITOR, TIMELINE) are shown on top or as navigations
+
+  // For IDLE and ANALYZING states, show the timeline landing page
+  if (state === AppState.IDLE || state === AppState.ANALYZING) {
+    return (
+      <TimelineLanding
+        onFileSelect={handleFileSelect}
+        isLoading={state === AppState.ANALYZING}
+        statusMessage={statusMessage}
+        analysis={analysis}
+        videoUrl={videoUrl}
+        pipelineState={pipelineState}
+        onStopGeneration={handleStopGeneration}
+        onViewSegment={handleViewSegment}
+        onOpenTimelineEditor={handleOpenTimelineEditor}
+        hasKey={hasKey}
+        onConnectKey={handleConnectKey}
+      />
+    );
+  }
+
+  // For TIMELINE_EDITOR state, show full-screen editor
+  if (state === AppState.TIMELINE_EDITOR && analysis && videoUrl) {
+    return (
+      <div className="fixed inset-0 z-50 bg-zinc-950">
+        <TimelineEditor
+          videoUrl={videoUrl}
+          analysis={analysis}
+          onBack={handleBackFromEditor}
+          onViewSegment={handleViewSegment}
+          onUpdateSegmentDuration={handleUpdateSegmentDuration}
+          onUpdateSegmentTimestamp={handleUpdateSegmentTimestamp}
+        />
+      </div>
+    );
+  }
+
+  // For other states (DETAIL_VIEW, TIMELINE, ERROR), show with header
   return (
     <div className="min-h-screen bg-[#09090b] text-zinc-100 selection:bg-pink-500 selection:text-white">
       <header className="border-b border-zinc-800 bg-zinc-950/50 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center">
-              <Zap className="w-5 h-5 text-white" fill="currentColor" />
-            </div>
-            <h1 className="text-lg font-bold tracking-tight">Gemini <span className="text-zinc-400 font-light">Veo Animator</span></h1>
+            <button onClick={handleBackToTimeline} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center">
+                <Zap className="w-5 h-5 text-white" fill="currentColor" />
+              </div>
+              <h1 className="text-lg font-bold tracking-tight">Gemini <span className="text-zinc-400 font-light">Veo Animator</span></h1>
+            </button>
           </div>
-          
-          {!hasKey && (
-             <button onClick={handleConnectKey} className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-3 py-1.5 rounded-full flex items-center gap-2 border border-zinc-700">
-                <Key className="w-3 h-3" /> Connect API Key
-             </button>
-          )}
+
+          <div className="flex items-center gap-3">
+            {state !== AppState.ERROR && (
+              <button onClick={handleBackToTimeline} className="text-sm text-zinc-400 hover:text-white">
+                ← Back to Timeline
+              </button>
+            )}
+            <button onClick={handleReset} className="text-sm text-zinc-500 hover:text-zinc-300">
+              Start Over
+            </button>
+          </div>
         </div>
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-12">
-        {!hasKey && state === AppState.IDLE && (
-            <div className="mb-8 p-6 bg-gradient-to-r from-purple-900/20 to-pink-900/20 border border-purple-500/20 rounded-2xl flex flex-col items-center text-center space-y-4">
-                <h2 className="text-xl font-bold text-white">Get Started</h2>
-                <p className="text-zinc-400 max-w-lg">Connect your Google Cloud API Key to analyze videos and generate overlays.</p>
-                <button onClick={handleConnectKey} className="bg-white text-black font-bold py-2 px-6 rounded-full hover:bg-zinc-200 transition-colors">Connect Key</button>
-            </div>
-        )}
-
-        {state === AppState.IDLE && (
-          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="text-center mb-12 space-y-4">
-              <h2 className="text-4xl md:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white via-zinc-200 to-zinc-500">
-                Remix your reality.
-              </h2>
-              <p className="text-lg text-zinc-400 max-w-2xl mx-auto">
-                Upload longer videos. Gemini identifies key topics and creates custom green screen overlays for every segment.
-              </p>
-            </div>
-            <VideoUploader onFileSelect={handleFileSelect} isLoading={false} />
-          </div>
-        )}
-
-        {state === AppState.ANALYZING && (
-          <div className="flex flex-col items-center justify-center space-y-8 py-20 animate-in fade-in duration-500">
-             <div className="relative w-24 h-24">
-                <div className="absolute inset-0 border-t-4 border-purple-500 rounded-full animate-spin"></div>
-                <div className="absolute inset-2 border-r-4 border-pink-500 rounded-full animate-spin animation-delay-200"></div>
-             </div>
-             <div className="text-center space-y-2">
-                <h3 className="text-2xl font-bold text-white">Analyzing Video Timeline</h3>
-                <p className="text-zinc-400">{statusMessage}</p>
-             </div>
-          </div>
-        )}
-
         {state === AppState.TIMELINE && analysis && (
           <div className="space-y-8">
              <div className="flex items-center justify-between">
@@ -375,7 +519,6 @@ const App: React.FC = () => {
                     <Film className="w-4 h-4" />
                     Timeline Editor
                   </button>
-                  <button onClick={handleReset} className="text-sm text-zinc-500 hover:text-zinc-300">Start Over</button>
                 </div>
              </div>
              <PromptSelector
@@ -406,19 +549,6 @@ const App: React.FC = () => {
              />
         )}
 
-        {state === AppState.TIMELINE_EDITOR && analysis && videoUrl && (
-             <div className="fixed inset-0 z-50 bg-zinc-950">
-               <TimelineEditor
-                  videoUrl={videoUrl}
-                  analysis={analysis}
-                  onBack={handleBackFromEditor}
-                  onViewSegment={handleViewSegment}
-                  onUpdateSegmentDuration={handleUpdateSegmentDuration}
-                  onUpdateSegmentTimestamp={handleUpdateSegmentTimestamp}
-               />
-             </div>
-        )}
-
         {state === AppState.ERROR && (
            <div className="max-w-md mx-auto text-center space-y-6 py-20 animate-in zoom-in-95">
               <div className="w-16 h-16 bg-red-900/20 rounded-full flex items-center justify-center mx-auto">
@@ -431,7 +561,6 @@ const App: React.FC = () => {
               <button onClick={handleReset} className="bg-zinc-800 text-white font-semibold py-2 px-6 rounded-full hover:bg-zinc-700 transition-colors">Try Again</button>
            </div>
         )}
-
       </main>
     </div>
   );

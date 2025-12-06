@@ -538,25 +538,34 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             >
               {/* Segment clips on animation track */}
               {analysis.segments.map((segment) => {
-                const hasContent = segment.status.includes('success');
+                const isVideoComplete = segment.status === 'video-success';
+                const isImageComplete = segment.status === 'image-success';
+                const isGenerating = segment.status.includes('generating');
                 const left = getSegmentPosition(segment.timestamp);
                 const segmentDuration = segment.duration || 5;
                 const width = duration > 0 ? (segmentDuration / duration) * 100 : 5;
                 const isDraggingThis = segmentDrag?.segmentId === segment.id;
+
+                // Color based on status
+                const getStatusClass = () => {
+                  if (isVideoComplete) return 'bg-gradient-to-r from-green-600/80 to-green-500/60 border border-green-400/50 hover:border-green-400';
+                  if (segment.status === 'generating-video') return 'bg-gradient-to-r from-purple-600/60 to-purple-500/40 border border-purple-400/50 animate-pulse';
+                  if (isImageComplete) return 'bg-gradient-to-r from-blue-600/60 to-blue-500/40 border border-blue-400/50';
+                  if (segment.status === 'generating-image') return 'bg-gradient-to-r from-blue-600/40 to-blue-500/20 border border-blue-400/30 animate-pulse';
+                  return 'bg-zinc-700/50 border border-zinc-600/50 border-dashed';
+                };
 
                 return (
                   <div
                     key={segment.id}
                     className={`
                       absolute top-1 bottom-1 rounded cursor-grab select-none group/segment
-                      ${hasContent
-                        ? 'bg-gradient-to-r from-green-600/80 to-green-500/60 border border-green-400/50 hover:border-green-400'
-                        : 'bg-zinc-700/50 border border-zinc-600/50 border-dashed'}
+                      ${getStatusClass()}
                       ${activeSegment?.id === segment.id ? 'ring-2 ring-white/50' : ''}
                       ${isDraggingThis ? 'ring-2 ring-purple-500 cursor-grabbing z-20' : 'z-10'}
                     `}
                     style={{ left: `${left}%`, width: `${Math.max(width, 2)}%` }}
-                    title={`${segment.topic} (${segmentDuration}s)`}
+                    title={`${segment.topic} (${segmentDuration}s) - ${segment.status}`}
                     onMouseDown={(e) => handleSegmentDragStart(e, segment, 'move')}
                     onClick={(e) => { e.stopPropagation(); jumpToSegment(segment); }}
                   >
