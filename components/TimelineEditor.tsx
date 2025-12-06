@@ -2,21 +2,28 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   Play, Pause, SkipBack, SkipForward, Volume2, VolumeX,
-  Layers, Film, Sparkles, ChevronLeft, Eye, EyeOff,
+  Layers, Film, Sparkles, Eye, EyeOff, Upload,
   Diamond, Maximize2, ZoomIn, ZoomOut, Clock, GripVertical, GripHorizontal,
-  Plus, Minus
+  Plus, Minus, Loader2, StopCircle, CheckCircle2, Image, Video
 } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { AnalysisResult, Segment } from '../types';
+import { AnalysisResult, Segment, GenerationPipelineState } from '../types';
 import { formatTime } from '../utils/videoUtils';
+import { MAX_VIDEO_SIZE_MB } from '../constants';
 
 interface TimelineEditorProps {
-  videoUrl: string;
-  analysis: AnalysisResult;
-  onBack: () => void;
+  videoUrl: string | null;
+  analysis: AnalysisResult | null;
+  onFileSelect: (file: File) => void;
+  isLoading: boolean;
+  statusMessage: string;
+  pipelineState: GenerationPipelineState;
+  onStopGeneration: () => void;
   onViewSegment: (segment: Segment) => void;
   onUpdateSegmentDuration: (segmentId: string, newDuration: number) => void;
   onUpdateSegmentTimestamp: (segmentId: string, newTimestamp: number) => void;
+  hasKey: boolean;
+  onConnectKey: () => void;
 }
 
 interface LayerVisibility {
@@ -37,10 +44,16 @@ interface SegmentDragState {
 const TimelineEditor: React.FC<TimelineEditorProps> = ({
   videoUrl,
   analysis,
-  onBack,
+  onFileSelect,
+  isLoading,
+  statusMessage,
+  pipelineState,
+  onStopGeneration,
   onViewSegment,
   onUpdateSegmentDuration,
-  onUpdateSegmentTimestamp
+  onUpdateSegmentTimestamp,
+  hasKey,
+  onConnectKey
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayVideoRef = useRef<HTMLVideoElement>(null);
@@ -60,9 +73,71 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     animation: true
   });
   const [segmentDrag, setSegmentDrag] = useState<SegmentDragState | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  // File picker handlers
+  const handleDrag = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  }, []);
+
+  const validateAndSelectFile = useCallback((file: File) => {
+    if (!file.type.startsWith('video/')) {
+      setFileError("Please upload a video file.");
+      return;
+    }
+    const sizeMB = file.size / (1024 * 1024);
+    if (sizeMB > MAX_VIDEO_SIZE_MB) {
+      setFileError(`File too large (${sizeMB.toFixed(1)}MB). Max size is ${MAX_VIDEO_SIZE_MB}MB.`);
+      return;
+    }
+    setFileError(null);
+    onFileSelect(file);
+  }, [onFileSelect]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      validateAndSelectFile(e.dataTransfer.files[0]);
+    }
+  }, [validateAndSelectFile]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      validateAndSelectFile(e.target.files[0]);
+    }
+  };
+
+  // Pipeline helpers
+  const getPhaseLabel = () => {
+    switch (pipelineState.currentPhase) {
+      case 'prompts': return 'Generating prompts...';
+      case 'images': return 'Creating images...';
+      case 'videos': return 'Animating videos...';
+      case 'complete': return 'Complete';
+      default: return '';
+    }
+  };
+
+  const getSegmentStatusIcon = (segment: Segment) => {
+    if (segment.status === 'video-success') return <CheckCircle2 className="w-4 h-4 text-green-400" />;
+    if (segment.status === 'generating-video') return <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />;
+    if (segment.status === 'image-success') return <Image className="w-4 h-4 text-blue-400" />;
+    if (segment.status === 'generating-image') return <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />;
+    return <div className="w-4 h-4 rounded-full border-2 border-zinc-600" />;
+  };
 
   // Find the currently active segment based on playback time
   const findActiveSegment = useCallback((time: number): Segment | null => {
+    if (!analysis) return null;
     // Find segment that contains this time (using segment's duration)
     for (const segment of analysis.segments) {
       const segmentDuration = segment.duration || 5;
@@ -71,7 +146,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
       }
     }
     return null;
-  }, [analysis.segments]);
+  }, [analysis]);
 
   // Update current time during playback
   useEffect(() => {
@@ -212,7 +287,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const deltaX = e.clientX - segmentDrag.initialMouseX;
     const deltaTime = (deltaX / trackWidth) * duration;
 
-    const segment = analysis.segments.find(s => s.id === segmentDrag.segmentId);
+    const segment = analysis?.segments.find(s => s.id === segmentDrag.segmentId);
     if (!segment) return;
 
     if (segmentDrag.mode === 'move') {
@@ -235,7 +310,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
       ));
       onUpdateSegmentDuration(segmentDrag.segmentId, Math.round(newDuration * 10) / 10);
     }
-  }, [segmentDrag, duration, analysis.segments, onUpdateSegmentTimestamp, onUpdateSegmentDuration]);
+  }, [segmentDrag, duration, analysis?.segments, onUpdateSegmentTimestamp, onUpdateSegmentDuration]);
 
   const handleSegmentDragEnd = useCallback(() => {
     setSegmentDrag(null);
@@ -261,21 +336,131 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     return duration > 0 ? (timestamp / duration) * 100 : 0;
   };
 
+  // Empty state - no video loaded
+  if (!videoUrl) {
+    return (
+      <div className="w-full h-screen flex flex-col bg-zinc-950">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-900/50">
+          <div className="flex items-center gap-3">
+            <Film className="w-5 h-5 text-purple-400" />
+            <h1 className="text-lg font-bold text-white">Timeline Editor</h1>
+          </div>
+        </div>
+
+        {/* Empty timeline with file picker */}
+        <div className="flex-1 flex flex-col items-center justify-center p-8">
+          {!hasKey && (
+            <div className="mb-8 p-6 bg-gradient-to-r from-purple-900/20 to-pink-900/20 border border-purple-500/20 rounded-2xl max-w-md text-center">
+              <h2 className="text-lg font-bold text-white mb-2">Connect API Key</h2>
+              <p className="text-zinc-400 text-sm mb-4">Connect your Google Cloud API Key to get started.</p>
+              <button onClick={onConnectKey} className="bg-white text-black font-bold py-2 px-6 rounded-full hover:bg-zinc-200">
+                Connect Key
+              </button>
+            </div>
+          )}
+
+          <div
+            className={`
+              relative w-full max-w-2xl border-2 border-dashed rounded-2xl p-16 transition-all
+              ${dragActive ? 'border-purple-500 bg-purple-500/10' : 'border-zinc-700 bg-zinc-900/30 hover:border-zinc-500'}
+              ${isLoading ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}
+            `}
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
+          >
+            <input
+              type="file"
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+              accept="video/*"
+              onChange={handleFileChange}
+              disabled={isLoading}
+            />
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className={`p-5 rounded-full ${dragActive ? 'bg-purple-500/20' : 'bg-zinc-800'}`}>
+                <Upload className={`w-10 h-10 ${dragActive ? 'text-purple-400' : 'text-zinc-400'}`} />
+              </div>
+              <div>
+                <h3 className="text-2xl font-bold text-white mb-2">Drop a video to begin</h3>
+                <p className="text-zinc-400">or click to browse your files</p>
+              </div>
+              <div className="text-xs text-zinc-500 px-4 py-2 bg-zinc-900 rounded-full border border-zinc-800">
+                Max size: {MAX_VIDEO_SIZE_MB}MB • MP4, MOV, WebM
+              </div>
+            </div>
+          </div>
+          {fileError && <p className="text-red-400 text-sm mt-4">{fileError}</p>}
+        </div>
+      </div>
+    );
+  }
+
+  // Analyzing state - video loaded but no analysis yet
+  if (isLoading && !analysis) {
+    return (
+      <div className="w-full h-screen flex flex-col bg-zinc-950">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-900/50">
+          <div className="flex items-center gap-3">
+            <Film className="w-5 h-5 text-purple-400" />
+            <h1 className="text-lg font-bold text-white">Timeline Editor</h1>
+          </div>
+        </div>
+
+        {/* Loading content */}
+        <div className="flex-1 flex">
+          {/* Video preview */}
+          <div className="w-1/3 p-4 border-r border-zinc-800">
+            <div className="aspect-video bg-black rounded-xl overflow-hidden">
+              <video src={videoUrl} className="w-full h-full object-contain" controls />
+            </div>
+          </div>
+
+          {/* Loading state */}
+          <div className="flex-1 flex flex-col items-center justify-center">
+            <Loader2 className="w-12 h-12 text-purple-400 animate-spin mb-4" />
+            <p className="text-zinc-400">{statusMessage || 'Analyzing video...'}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full h-screen flex flex-col bg-zinc-950">
-      {/* Header */}
+      {/* Header with pipeline status */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-900/50">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors"
-        >
-          <ChevronLeft className="w-4 h-4" />
-          Back to Results
-        </button>
-        <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-          <Film className="w-4 h-4 text-purple-400" />
-          Timeline Editor
-        </h2>
+        <div className="flex items-center gap-3">
+          <Film className="w-5 h-5 text-purple-400" />
+          <h1 className="text-lg font-bold text-white">Timeline Editor</h1>
+        </div>
+
+        {/* Center: Pipeline status */}
+        <div className="flex items-center gap-4">
+          {pipelineState.isRunning && (
+            <div className="flex items-center gap-3 bg-purple-900/30 px-4 py-2 rounded-full border border-purple-500/30">
+              <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
+              <span className="text-sm text-purple-300">{getPhaseLabel()}</span>
+              <button
+                onClick={onStopGeneration}
+                className="flex items-center gap-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 px-3 py-1 rounded-full text-xs font-medium transition-colors"
+              >
+                <StopCircle className="w-3 h-3" />
+                Stop
+              </button>
+            </div>
+          )}
+          {pipelineState.currentPhase === 'complete' && (
+            <div className="flex items-center gap-2 bg-green-900/30 px-4 py-2 rounded-full border border-green-500/30">
+              <CheckCircle2 className="w-4 h-4 text-green-400" />
+              <span className="text-sm text-green-300">Complete</span>
+            </div>
+          )}
+        </div>
+
+        {/* Right: Zoom controls */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}
@@ -395,6 +580,41 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             {/* Segment List Sidebar */}
             <Panel defaultSize={25} minSize={15} maxSize={50}>
               <div className="h-full border-l border-zinc-800 bg-zinc-900/30 flex flex-col">
+                {/* Progress Stats */}
+                {analysis && (
+                  <div className="p-3 border-b border-zinc-800">
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="bg-zinc-800 rounded-lg p-2 text-center">
+                        <div className="flex items-center justify-center gap-1 text-zinc-400 mb-0.5">
+                          <Sparkles className="w-3 h-3" />
+                          <span className="text-[10px]">Prompts</span>
+                        </div>
+                        <span className="text-sm font-bold text-white">
+                          {pipelineState.progress.promptsGenerated}/{pipelineState.progress.totalSegments}
+                        </span>
+                      </div>
+                      <div className="bg-zinc-800 rounded-lg p-2 text-center">
+                        <div className="flex items-center justify-center gap-1 text-zinc-400 mb-0.5">
+                          <Image className="w-3 h-3" />
+                          <span className="text-[10px]">Images</span>
+                        </div>
+                        <span className="text-sm font-bold text-white">
+                          {pipelineState.progress.imagesGenerated}/{pipelineState.progress.totalSegments}
+                        </span>
+                      </div>
+                      <div className="bg-zinc-800 rounded-lg p-2 text-center">
+                        <div className="flex items-center justify-center gap-1 text-zinc-400 mb-0.5">
+                          <Video className="w-3 h-3" />
+                          <span className="text-[10px]">Videos</span>
+                        </div>
+                        <span className="text-sm font-bold text-white">
+                          {pipelineState.progress.videosGenerated}/{pipelineState.progress.totalSegments}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="p-3 border-b border-zinc-800">
                   <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
                     <Clock className="w-3 h-3" />
@@ -402,7 +622,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                   </h3>
                 </div>
                 <div className="flex-1 overflow-y-auto">
-                  {analysis.segments.map((segment) => (
+                  {analysis?.segments.map((segment) => (
                     <div
                       key={segment.id}
                       onClick={() => jumpToSegment(segment)}
@@ -412,7 +632,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                       `}
                     >
                       <div className="flex items-center gap-2 mb-1">
-                        <Diamond className={`w-3 h-3 ${segment.status.includes('success') ? 'text-green-400' : 'text-zinc-500'}`} />
+                        {getSegmentStatusIcon(segment)}
                         <span className="font-mono text-xs text-zinc-400">{segment.formattedTime}</span>
                       </div>
                       <h4 className="text-sm font-medium text-white truncate">{segment.topic}</h4>
@@ -537,26 +757,35 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
               className="flex-1 h-10 bg-zinc-800/50 rounded border border-zinc-700 relative overflow-visible"
             >
               {/* Segment clips on animation track */}
-              {analysis.segments.map((segment) => {
-                const hasContent = segment.status.includes('success');
+              {analysis?.segments.map((segment) => {
+                const isVideoComplete = segment.status === 'video-success';
+                const isImageComplete = segment.status === 'image-success';
+                const isGenerating = segment.status.includes('generating');
                 const left = getSegmentPosition(segment.timestamp);
                 const segmentDuration = segment.duration || 5;
                 const width = duration > 0 ? (segmentDuration / duration) * 100 : 5;
                 const isDraggingThis = segmentDrag?.segmentId === segment.id;
+
+                // Color based on status
+                const getStatusClass = () => {
+                  if (isVideoComplete) return 'bg-gradient-to-r from-green-600/80 to-green-500/60 border border-green-400/50 hover:border-green-400';
+                  if (segment.status === 'generating-video') return 'bg-gradient-to-r from-purple-600/60 to-purple-500/40 border border-purple-400/50 animate-pulse';
+                  if (isImageComplete) return 'bg-gradient-to-r from-blue-600/60 to-blue-500/40 border border-blue-400/50';
+                  if (segment.status === 'generating-image') return 'bg-gradient-to-r from-blue-600/40 to-blue-500/20 border border-blue-400/30 animate-pulse';
+                  return 'bg-zinc-700/50 border border-zinc-600/50 border-dashed';
+                };
 
                 return (
                   <div
                     key={segment.id}
                     className={`
                       absolute top-1 bottom-1 rounded cursor-grab select-none group/segment
-                      ${hasContent
-                        ? 'bg-gradient-to-r from-green-600/80 to-green-500/60 border border-green-400/50 hover:border-green-400'
-                        : 'bg-zinc-700/50 border border-zinc-600/50 border-dashed'}
+                      ${getStatusClass()}
                       ${activeSegment?.id === segment.id ? 'ring-2 ring-white/50' : ''}
                       ${isDraggingThis ? 'ring-2 ring-purple-500 cursor-grabbing z-20' : 'z-10'}
                     `}
                     style={{ left: `${left}%`, width: `${Math.max(width, 2)}%` }}
-                    title={`${segment.topic} (${segmentDuration}s)`}
+                    title={`${segment.topic} (${segmentDuration}s) - ${segment.status}`}
                     onMouseDown={(e) => handleSegmentDragStart(e, segment, 'move')}
                     onClick={(e) => { e.stopPropagation(); jumpToSegment(segment); }}
                   >
@@ -597,7 +826,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             />
 
             {/* Keyframe markers */}
-            {analysis.segments.map((segment) => {
+            {analysis?.segments.map((segment) => {
               const position = getSegmentPosition(segment.timestamp);
               const hasContent = segment.status.includes('success');
 
