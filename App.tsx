@@ -1,13 +1,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { AppState, AnalysisResult, Segment, GenerationPipelineState } from './types';
-import TimelineLanding from './components/TimelineLanding';
 import PromptSelector from './components/PromptSelector';
 import VeoGenerator from './components/VeoGenerator';
 import TimelineEditor from './components/TimelineEditor';
 import { fileToBase64, extractFrameFromVideo, getClosestAspectRatio, formatTime } from './utils/videoUtils';
 import { analyzeVideoContent, generateImageAsset, generateVeoAnimation, checkApiKey, promptApiKey } from './services/geminiService';
-import { Zap, AlertTriangle, Key, Film } from 'lucide-react';
+import { Zap, AlertTriangle, Film } from 'lucide-react';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>(AppState.IDLE);
@@ -441,41 +440,25 @@ const App: React.FC = () => {
     });
   };
 
-  // Timeline-first rendering: show TimelineLanding as main view for IDLE and ANALYZING states
-  // Other views (DETAIL_VIEW, TIMELINE_EDITOR, TIMELINE) are shown on top or as navigations
+  // Timeline-first rendering: TimelineEditor is the main view for IDLE, ANALYZING, and TIMELINE_EDITOR states
+  // It handles empty state (file picker), loading state, and full editor in one component
 
-  // For IDLE and ANALYZING states, show the timeline landing page
-  if (state === AppState.IDLE || state === AppState.ANALYZING) {
+  if (state === AppState.IDLE || state === AppState.ANALYZING || state === AppState.TIMELINE_EDITOR) {
     return (
-      <TimelineLanding
+      <TimelineEditor
+        videoUrl={videoUrl}
+        analysis={analysis}
         onFileSelect={handleFileSelect}
         isLoading={state === AppState.ANALYZING}
         statusMessage={statusMessage}
-        analysis={analysis}
-        videoUrl={videoUrl}
         pipelineState={pipelineState}
         onStopGeneration={handleStopGeneration}
         onViewSegment={handleViewSegment}
-        onOpenTimelineEditor={handleOpenTimelineEditor}
+        onUpdateSegmentDuration={handleUpdateSegmentDuration}
+        onUpdateSegmentTimestamp={handleUpdateSegmentTimestamp}
         hasKey={hasKey}
         onConnectKey={handleConnectKey}
       />
-    );
-  }
-
-  // For TIMELINE_EDITOR state, show full-screen editor
-  if (state === AppState.TIMELINE_EDITOR && analysis && videoUrl) {
-    return (
-      <div className="fixed inset-0 z-50 bg-zinc-950">
-        <TimelineEditor
-          videoUrl={videoUrl}
-          analysis={analysis}
-          onBack={handleBackFromEditor}
-          onViewSegment={handleViewSegment}
-          onUpdateSegmentDuration={handleUpdateSegmentDuration}
-          onUpdateSegmentTimestamp={handleUpdateSegmentTimestamp}
-        />
-      </div>
     );
   }
 
