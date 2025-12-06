@@ -5,7 +5,7 @@ import VideoUploader from './components/VideoUploader';
 import PromptSelector from './components/PromptSelector'; // Now acts as Timeline View
 import VeoGenerator from './components/VeoGenerator'; // Now acts as Detail View
 import TimelineEditor from './components/TimelineEditor'; // Video editor timeline view
-import { fileToBase64, extractFrameFromVideo, getClosestAspectRatio } from './utils/videoUtils';
+import { fileToBase64, extractFrameFromVideo, getClosestAspectRatio, formatTime } from './utils/videoUtils';
 import { analyzeVideoContent, generateImageAsset, generateVeoAnimation, checkApiKey, promptApiKey } from './services/geminiService';
 import { Zap, AlertTriangle, Key, Film } from 'lucide-react';
 
@@ -250,6 +250,18 @@ const App: React.FC = () => {
     }) : null);
   };
 
+  const handleUpdateSegmentTimestamp = (segmentId: string, newTimestamp: number) => {
+    setAnalysis(prev => {
+      if (!prev) return null;
+      const updatedSegments = prev.segments.map(s =>
+        s.id === segmentId ? { ...s, timestamp: newTimestamp, formattedTime: formatTime(newTimestamp) } : s
+      );
+      // Sort segments by timestamp after update
+      updatedSegments.sort((a, b) => a.timestamp - b.timestamp);
+      return { ...prev, segments: updatedSegments };
+    });
+  };
+
   const handleReset = () => {
     if (videoUrl) URL.revokeObjectURL(videoUrl);
     setVideoUrl(null);
@@ -362,6 +374,7 @@ const App: React.FC = () => {
                   onBack={handleBackFromEditor}
                   onViewSegment={handleViewSegment}
                   onUpdateSegmentDuration={handleUpdateSegmentDuration}
+                  onUpdateSegmentTimestamp={handleUpdateSegmentTimestamp}
                />
              </div>
         )}
