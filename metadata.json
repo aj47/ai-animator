@@ -1,0 +1,5 @@
+{
+  "name": "Gemini Veo Animator",
+  "description": "Ingest videos, analyze speech, and generate chroma-keyable green screen overlays and educational visual aids using Gemini 3.",
+  "requestFramePermissions": []
+}
