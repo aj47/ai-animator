@@ -25,7 +25,22 @@
         border-radius: 4px;
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #52525b; 
+        background: #52525b;
+      }
+      /* Resize handle styles */
+      [data-panel-group-direction="horizontal"] > [data-resize-handle] {
+        transition: background-color 0.15s ease;
+      }
+      [data-panel-group-direction="horizontal"] > [data-resize-handle]:hover,
+      [data-panel-group-direction="horizontal"] > [data-resize-handle][data-resize-handle-active] {
+        background-color: rgba(168, 85, 247, 0.5) !important;
+      }
+      [data-panel-group-direction="vertical"] > [data-resize-handle] {
+        transition: background-color 0.15s ease;
+      }
+      [data-panel-group-direction="vertical"] > [data-resize-handle]:hover,
+      [data-panel-group-direction="vertical"] > [data-resize-handle][data-resize-handle-active] {
+        background-color: rgba(168, 85, 247, 0.5) !important;
       }
     </style>
   <script type="importmap">
