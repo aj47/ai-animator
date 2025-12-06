@@ -357,16 +357,18 @@ const App: React.FC = () => {
                   <button onClick={handleReset} className="text-sm text-zinc-500 hover:text-zinc-300">Start Over</button>
                 </div>
              </div>
-             <PromptSelector 
-                analysis={analysis} 
+             <PromptSelector
+                analysis={analysis}
                 onGenerateSegmentImage={handleGenerateSegmentImage}
                 onGenerateSegmentVideo={handleGenerateSegmentVideo}
                 onViewSegment={handleViewSegment}
                 onBatchGenerateImages={handleBatchGenerateImages}
                 onBatchAnimate={handleBatchAnimate}
                 onFullAutoGenerate={handleFullAutoGenerate}
+                onUpdateSegmentPrompts={handleUpdateSegmentPrompts}
+                onRegenerateImage={handleRegenerateImage}
                 isBatchProcessing={isBatchProcessing}
-                disabled={isBatchProcessing} 
+                disabled={isBatchProcessing}
              />
           </div>
         )}
