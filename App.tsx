@@ -4,9 +4,10 @@ import { AppState, AnalysisResult, Segment } from './types';
 import VideoUploader from './components/VideoUploader';
 import PromptSelector from './components/PromptSelector'; // Now acts as Timeline View
 import VeoGenerator from './components/VeoGenerator'; // Now acts as Detail View
+import TimelineEditor from './components/TimelineEditor'; // Video editor timeline view
 import { fileToBase64, extractFrameFromVideo, getClosestAspectRatio } from './utils/videoUtils';
 import { analyzeVideoContent, generateImageAsset, generateVeoAnimation, checkApiKey, promptApiKey } from './services/geminiService';
-import { Zap, AlertTriangle, Key } from 'lucide-react';
+import { Zap, AlertTriangle, Key, Film } from 'lucide-react';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>(AppState.IDLE);
@@ -232,6 +233,14 @@ const App: React.FC = () => {
     setState(AppState.TIMELINE);
   };
 
+  const handleOpenTimelineEditor = () => {
+    setState(AppState.TIMELINE_EDITOR);
+  };
+
+  const handleBackFromEditor = () => {
+    setState(AppState.TIMELINE);
+  };
+
   const handleReset = () => {
     if (videoUrl) URL.revokeObjectURL(videoUrl);
     setVideoUrl(null);
@@ -302,7 +311,16 @@ const App: React.FC = () => {
           <div className="space-y-8">
              <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold">Analysis Results</h2>
-                <button onClick={handleReset} className="text-sm text-zinc-500 hover:text-zinc-300">Start Over</button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleOpenTimelineEditor}
+                    className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-sm font-bold py-2 px-4 rounded-full transition-all shadow-lg shadow-purple-900/20"
+                  >
+                    <Film className="w-4 h-4" />
+                    Timeline Editor
+                  </button>
+                  <button onClick={handleReset} className="text-sm text-zinc-500 hover:text-zinc-300">Start Over</button>
+                </div>
              </div>
              <PromptSelector 
                 analysis={analysis} 
@@ -319,12 +337,23 @@ const App: React.FC = () => {
         )}
 
         {state === AppState.DETAIL_VIEW && activeSegment && (
-             <VeoGenerator 
+             <VeoGenerator
                 segment={activeSegment}
                 originalVideoUrl={videoUrl}
                 onBack={handleBackToTimeline}
                 onAnimate={(seg) => handleGenerateSegmentVideo(seg)}
              />
+        )}
+
+        {state === AppState.TIMELINE_EDITOR && analysis && videoUrl && (
+             <div className="fixed inset-0 z-50 bg-zinc-950">
+               <TimelineEditor
+                  videoUrl={videoUrl}
+                  analysis={analysis}
+                  onBack={handleBackFromEditor}
+                  onViewSegment={handleViewSegment}
+               />
+             </div>
         )}
 
         {state === AppState.ERROR && (

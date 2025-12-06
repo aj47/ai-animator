@@ -22,8 +22,9 @@ export interface AnalysisResult {
 export enum AppState {
   IDLE = 'IDLE',
   ANALYZING = 'ANALYZING',
-  TIMELINE = 'TIMELINE', 
-  DETAIL_VIEW = 'DETAIL_VIEW', 
+  TIMELINE = 'TIMELINE',
+  TIMELINE_EDITOR = 'TIMELINE_EDITOR',
+  DETAIL_VIEW = 'DETAIL_VIEW',
   ERROR = 'ERROR'
 }
 
