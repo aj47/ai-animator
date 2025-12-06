@@ -3,7 +3,8 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   Play, Pause, SkipBack, SkipForward, Volume2, VolumeX,
   Layers, Film, Sparkles, ChevronLeft, Eye, EyeOff,
-  Diamond, Maximize2, ZoomIn, ZoomOut, Clock, GripVertical, GripHorizontal
+  Diamond, Maximize2, ZoomIn, ZoomOut, Clock, GripVertical, GripHorizontal,
+  Plus, Minus
 } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { AnalysisResult, Segment } from '../types';
@@ -14,6 +15,8 @@ interface TimelineEditorProps {
   analysis: AnalysisResult;
   onBack: () => void;
   onViewSegment: (segment: Segment) => void;
+  onUpdateSegmentDuration: (segmentId: string, newDuration: number) => void;
+  onUpdateSegmentTimestamp: (segmentId: string, newTimestamp: number) => void;
 }
 
 interface LayerVisibility {
@@ -21,15 +24,28 @@ interface LayerVisibility {
   animation: boolean;
 }
 
+type SegmentDragMode = 'move' | 'resize-start' | 'resize-end' | null;
+
+interface SegmentDragState {
+  segmentId: string;
+  mode: SegmentDragMode;
+  initialMouseX: number;
+  initialTimestamp: number;
+  initialDuration: number;
+}
+
 const TimelineEditor: React.FC<TimelineEditorProps> = ({
   videoUrl,
   analysis,
   onBack,
-  onViewSegment
+  onViewSegment,
+  onUpdateSegmentDuration,
+  onUpdateSegmentTimestamp
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayVideoRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const animationTrackRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -43,12 +59,14 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     video: true,
     animation: true
   });
+  const [segmentDrag, setSegmentDrag] = useState<SegmentDragState | null>(null);
 
   // Find the currently active segment based on playback time
   const findActiveSegment = useCallback((time: number): Segment | null => {
-    // Find segment that contains this time (within a 5-second window after the keyframe)
+    // Find segment that contains this time (using segment's duration)
     for (const segment of analysis.segments) {
-      if (time >= segment.timestamp && time < segment.timestamp + 5) {
+      const segmentDuration = segment.duration || 5;
+      if (time >= segment.timestamp && time < segment.timestamp + segmentDuration) {
         return segment;
       }
     }
@@ -168,6 +186,71 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [isDragging, handleTimelineDrag, handleMouseUp]);
+
+  // Segment drag handlers
+  const handleSegmentDragStart = (
+    e: React.MouseEvent,
+    segment: Segment,
+    mode: 'move' | 'resize-start' | 'resize-end'
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setSegmentDrag({
+      segmentId: segment.id,
+      mode,
+      initialMouseX: e.clientX,
+      initialTimestamp: segment.timestamp,
+      initialDuration: segment.duration || 5
+    });
+  };
+
+  const handleSegmentDragMove = useCallback((e: MouseEvent) => {
+    if (!segmentDrag || !animationTrackRef.current) return;
+
+    const trackRect = animationTrackRef.current.getBoundingClientRect();
+    const trackWidth = trackRect.width;
+    const deltaX = e.clientX - segmentDrag.initialMouseX;
+    const deltaTime = (deltaX / trackWidth) * duration;
+
+    const segment = analysis.segments.find(s => s.id === segmentDrag.segmentId);
+    if (!segment) return;
+
+    if (segmentDrag.mode === 'move') {
+      const newTimestamp = Math.max(0, Math.min(
+        duration - (segment.duration || 5),
+        segmentDrag.initialTimestamp + deltaTime
+      ));
+      onUpdateSegmentTimestamp(segmentDrag.segmentId, Math.round(newTimestamp * 10) / 10);
+    } else if (segmentDrag.mode === 'resize-start') {
+      const maxDelta = segmentDrag.initialDuration - 1;
+      const clampedDelta = Math.max(-segmentDrag.initialTimestamp, Math.min(maxDelta, deltaTime));
+      const newTimestamp = segmentDrag.initialTimestamp + clampedDelta;
+      const newDuration = segmentDrag.initialDuration - clampedDelta;
+      onUpdateSegmentTimestamp(segmentDrag.segmentId, Math.round(newTimestamp * 10) / 10);
+      onUpdateSegmentDuration(segmentDrag.segmentId, Math.round(newDuration * 10) / 10);
+    } else if (segmentDrag.mode === 'resize-end') {
+      const newDuration = Math.max(1, Math.min(
+        duration - segmentDrag.initialTimestamp,
+        segmentDrag.initialDuration + deltaTime
+      ));
+      onUpdateSegmentDuration(segmentDrag.segmentId, Math.round(newDuration * 10) / 10);
+    }
+  }, [segmentDrag, duration, analysis.segments, onUpdateSegmentTimestamp, onUpdateSegmentDuration]);
+
+  const handleSegmentDragEnd = useCallback(() => {
+    setSegmentDrag(null);
+  }, []);
+
+  useEffect(() => {
+    if (segmentDrag) {
+      window.addEventListener('mousemove', handleSegmentDragMove);
+      window.addEventListener('mouseup', handleSegmentDragEnd);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleSegmentDragMove);
+      window.removeEventListener('mouseup', handleSegmentDragEnd);
+    };
+  }, [segmentDrag, handleSegmentDragMove, handleSegmentDragEnd]);
 
   const toggleLayerVisibility = (layer: keyof LayerVisibility) => {
     setLayerVisibility(prev => ({ ...prev, [layer]: !prev[layer] }));
@@ -334,6 +417,31 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                       </div>
                       <h4 className="text-sm font-medium text-white truncate">{segment.topic}</h4>
                       <p className="text-xs text-zinc-500 truncate mt-1">{segment.description}</p>
+
+                      {/* Duration Controls */}
+                      <div className="flex items-center gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
+                        <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Duration:</span>
+                        <div className="flex items-center gap-1 bg-zinc-800 rounded-md border border-zinc-700">
+                          <button
+                            onClick={() => onUpdateSegmentDuration(segment.id, Math.max(1, (segment.duration || 5) - 1))}
+                            className="p-1 hover:bg-zinc-700 rounded-l-md text-zinc-400 hover:text-white transition-colors"
+                            title="Decrease duration"
+                          >
+                            <Minus className="w-3 h-3" />
+                          </button>
+                          <span className="text-xs font-mono text-zinc-300 min-w-[32px] text-center">
+                            {segment.duration || 5}s
+                          </span>
+                          <button
+                            onClick={() => onUpdateSegmentDuration(segment.id, Math.min(30, (segment.duration || 5) + 1))}
+                            className="p-1 hover:bg-zinc-700 rounded-r-md text-zinc-400 hover:text-white transition-colors"
+                            title="Increase duration"
+                          >
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+
                       {segment.status.includes('success') && (
                         <button
                           onClick={(e) => { e.stopPropagation(); onViewSegment(segment); }}
@@ -424,31 +532,51 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             <div className="w-20 shrink-0">
               <span className="text-[10px] uppercase tracking-wider text-green-400 font-bold">Animation</span>
             </div>
-            <div className="flex-1 h-8 bg-zinc-800/50 rounded border border-zinc-700 relative overflow-hidden">
+            <div
+              ref={animationTrackRef}
+              className="flex-1 h-10 bg-zinc-800/50 rounded border border-zinc-700 relative overflow-visible"
+            >
               {/* Segment clips on animation track */}
               {analysis.segments.map((segment) => {
                 const hasContent = segment.status.includes('success');
                 const left = getSegmentPosition(segment.timestamp);
-                // Assume 5 second duration for each animation clip
-                const width = duration > 0 ? (5 / duration) * 100 : 5;
+                const segmentDuration = segment.duration || 5;
+                const width = duration > 0 ? (segmentDuration / duration) * 100 : 5;
+                const isDraggingThis = segmentDrag?.segmentId === segment.id;
 
                 return (
                   <div
                     key={segment.id}
-                    onClick={() => jumpToSegment(segment)}
                     className={`
-                      absolute top-1 bottom-1 rounded cursor-pointer transition-all
+                      absolute top-1 bottom-1 rounded cursor-grab select-none group/segment
                       ${hasContent
                         ? 'bg-gradient-to-r from-green-600/80 to-green-500/60 border border-green-400/50 hover:border-green-400'
                         : 'bg-zinc-700/50 border border-zinc-600/50 border-dashed'}
                       ${activeSegment?.id === segment.id ? 'ring-2 ring-white/50' : ''}
+                      ${isDraggingThis ? 'ring-2 ring-purple-500 cursor-grabbing z-20' : 'z-10'}
                     `}
                     style={{ left: `${left}%`, width: `${Math.max(width, 2)}%` }}
-                    title={segment.topic}
+                    title={`${segment.topic} (${segmentDuration}s)`}
+                    onMouseDown={(e) => handleSegmentDragStart(e, segment, 'move')}
+                    onClick={(e) => { e.stopPropagation(); jumpToSegment(segment); }}
                   >
-                    <div className="px-1.5 py-0.5 overflow-hidden">
+                    {/* Left resize handle */}
+                    <div
+                      className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-purple-500/50 rounded-l transition-colors"
+                      onMouseDown={(e) => handleSegmentDragStart(e, segment, 'resize-start')}
+                    />
+
+                    {/* Content */}
+                    <div className="px-2 py-0.5 overflow-hidden pointer-events-none">
                       <span className="text-[9px] text-white font-medium truncate block">{segment.topic}</span>
+                      <span className="text-[8px] text-white/60 font-mono">{segmentDuration}s</span>
                     </div>
+
+                    {/* Right resize handle */}
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-purple-500/50 rounded-r transition-colors"
+                      onMouseDown={(e) => handleSegmentDragStart(e, segment, 'resize-end')}
+                    />
                   </div>
                 );
               })}
