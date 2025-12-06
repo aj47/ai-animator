@@ -4,16 +4,18 @@ import { AppState, AnalysisResult, Segment } from './types';
 import VideoUploader from './components/VideoUploader';
 import PromptSelector from './components/PromptSelector'; // Now acts as Timeline View
 import VeoGenerator from './components/VeoGenerator'; // Now acts as Detail View
-import { fileToBase64, extractFrameFromVideo, getClosestAspectRatio } from './utils/videoUtils';
+import VideoTimeline from './components/VideoTimeline'; // Video Editor Timeline
+import { fileToBase64, extractFrameFromVideo, getClosestAspectRatio, getVideoDuration } from './utils/videoUtils';
 import { analyzeVideoContent, generateImageAsset, generateVeoAnimation, checkApiKey, promptApiKey } from './services/geminiService';
-import { Zap, AlertTriangle, Key } from 'lucide-react';
+import { Zap, AlertTriangle, Key, Clapperboard } from 'lucide-react';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>(AppState.IDLE);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   
-  const [videoAspectRatio, setVideoAspectRatio] = useState<string>("16:9"); 
+  const [videoAspectRatio, setVideoAspectRatio] = useState<string>("16:9");
+  const [videoDuration, setVideoDuration] = useState<number>(0);
 
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [activeSegment, setActiveSegment] = useState<Segment | null>(null);
@@ -59,6 +61,10 @@ const App: React.FC = () => {
       const { width, height } = await extractFrameFromVideo(url, 0);
       const aspectRatio = getClosestAspectRatio(width, height);
       setVideoAspectRatio(aspectRatio);
+
+      // 1b. Get video duration
+      const duration = await getVideoDuration(url);
+      setVideoDuration(duration);
 
       // 2. Prepare Base64 for Gemini
       const base64Video = await fileToBase64(file);
@@ -197,6 +203,14 @@ const App: React.FC = () => {
     setState(AppState.TIMELINE);
   };
 
+  const handleOpenEditor = () => {
+    setState(AppState.EDITOR);
+  };
+
+  const handleBackFromEditor = () => {
+    setState(AppState.TIMELINE);
+  };
+
   const handleReset = () => {
     if (videoUrl) URL.revokeObjectURL(videoUrl);
     setVideoUrl(null);
@@ -267,7 +281,16 @@ const App: React.FC = () => {
           <div className="space-y-8">
              <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold">Analysis Results</h2>
-                <button onClick={handleReset} className="text-sm text-zinc-500 hover:text-zinc-300">Start Over</button>
+                <div className="flex items-center gap-3">
+                   <button
+                     onClick={handleOpenEditor}
+                     className="flex items-center gap-2 text-sm bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold py-2 px-4 rounded-full transition-all shadow-lg shadow-indigo-900/20"
+                   >
+                     <Clapperboard className="w-4 h-4" />
+                     Open Editor
+                   </button>
+                   <button onClick={handleReset} className="text-sm text-zinc-500 hover:text-zinc-300">Start Over</button>
+                </div>
              </div>
              <PromptSelector 
                 analysis={analysis} 
@@ -283,12 +306,25 @@ const App: React.FC = () => {
         )}
 
         {state === AppState.DETAIL_VIEW && activeSegment && (
-             <VeoGenerator 
+             <VeoGenerator
                 segment={activeSegment}
                 originalVideoUrl={videoUrl}
                 onBack={handleBackToTimeline}
                 onAnimate={handleGenerateSegmentVideo}
              />
+        )}
+
+        {state === AppState.EDITOR && analysis && videoUrl && (
+          <div className="fixed inset-0 z-50 bg-zinc-950">
+            <VideoTimeline
+              videoUrl={videoUrl}
+              videoDuration={videoDuration}
+              analysis={analysis}
+              segments={analysis.segments}
+              onBack={handleBackFromEditor}
+              onSegmentClick={handleViewSegment}
+            />
+          </div>
         )}
 
         {state === AppState.ERROR && (

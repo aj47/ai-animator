@@ -80,3 +80,21 @@ export const formatTime = (seconds: number): string => {
   const secs = Math.floor(seconds % 60);
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
+
+export const getVideoDuration = (videoUrl: string): Promise<number> => {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.src = videoUrl;
+    video.preload = 'metadata';
+
+    video.onloadedmetadata = () => {
+      resolve(video.duration);
+      video.src = '';
+      video.load();
+    };
+
+    video.onerror = () => {
+      reject(new Error('Failed to load video metadata'));
+    };
+  });
+};
