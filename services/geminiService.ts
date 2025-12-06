@@ -12,6 +12,7 @@ export const checkApiKey = async (): Promise<boolean> => {
   if (process.env.API_KEY || process.env.GEMINI_API_KEY) {
     return true;
   }
+  // Then check AI Studio environment
   const win = window as any;
   if (win.aistudio && win.aistudio.hasSelectedApiKey) {
     return await win.aistudio.hasSelectedApiKey();

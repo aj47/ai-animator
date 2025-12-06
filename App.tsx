@@ -241,6 +241,41 @@ const App: React.FC = () => {
     setState(AppState.TIMELINE);
   };
 
+  const handleUpdateSegmentPrompts = (segmentId: string, prompt: string, animationPrompt: string) => {
+    setAnalysis(prev => prev ? ({
+      ...prev,
+      segments: prev.segments.map(s =>
+        s.id === segmentId ? { ...s, prompt, animationPrompt } : s
+      )
+    }) : null);
+
+    // Also update active segment if viewing it
+    if (activeSegment && activeSegment.id === segmentId) {
+      setActiveSegment(prev => prev ? ({ ...prev, prompt, animationPrompt }) : null);
+    }
+  };
+
+  const handleRegenerateImage = async (segment: Segment) => {
+    // Get the latest segment data from analysis (in case prompts were just updated)
+    const latestSegment = analysis?.segments.find(s => s.id === segment.id);
+    if (!latestSegment) return;
+
+    // Clear existing image/video and regenerate
+    setAnalysis(prev => prev ? ({
+      ...prev,
+      segments: prev.segments.map(s =>
+        s.id === segment.id ? { ...s, imageUrl: undefined, videoUrl: undefined, status: 'idle' } : s
+      )
+    }) : null);
+
+    if (activeSegment && activeSegment.id === segment.id) {
+      setActiveSegment(prev => prev ? ({ ...prev, imageUrl: undefined, videoUrl: undefined, status: 'idle' }) : null);
+    }
+
+    // Generate new image
+    await handleGenerateSegmentImage({ ...latestSegment, status: 'idle', imageUrl: undefined, videoUrl: undefined });
+  };
+
   const handleUpdateSegmentDuration = (segmentId: string, newDuration: number) => {
     setAnalysis(prev => prev ? ({
       ...prev,
@@ -343,16 +378,18 @@ const App: React.FC = () => {
                   <button onClick={handleReset} className="text-sm text-zinc-500 hover:text-zinc-300">Start Over</button>
                 </div>
              </div>
-             <PromptSelector 
-                analysis={analysis} 
+             <PromptSelector
+                analysis={analysis}
                 onGenerateSegmentImage={handleGenerateSegmentImage}
                 onGenerateSegmentVideo={handleGenerateSegmentVideo}
                 onViewSegment={handleViewSegment}
                 onBatchGenerateImages={handleBatchGenerateImages}
                 onBatchAnimate={handleBatchAnimate}
                 onFullAutoGenerate={handleFullAutoGenerate}
+                onUpdateSegmentPrompts={handleUpdateSegmentPrompts}
+                onRegenerateImage={handleRegenerateImage}
                 isBatchProcessing={isBatchProcessing}
-                disabled={isBatchProcessing} 
+                disabled={isBatchProcessing}
              />
           </div>
         )}
@@ -363,6 +400,9 @@ const App: React.FC = () => {
                 originalVideoUrl={videoUrl}
                 onBack={handleBackToTimeline}
                 onAnimate={(seg) => handleGenerateSegmentVideo(seg)}
+                onRegenerateImage={handleRegenerateImage}
+                onUpdateSegmentPrompts={handleUpdateSegmentPrompts}
+                onGenerateImage={handleGenerateSegmentImage}
              />
         )}
 
