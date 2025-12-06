@@ -1,15 +1,16 @@
 
 import React from 'react';
 import { AnalysisResult, Segment } from '../types';
-import { Sparkles, Film, Music, Layers, Clock, Loader2, Eye, Move, Zap, PlayCircle } from 'lucide-react';
+import { Sparkles, Film, Music, Layers, Clock, Loader2, Eye, Move, Zap, PlayCircle, Wand2 } from 'lucide-react';
 
 interface PromptSelectorProps {
   analysis: AnalysisResult;
-  onGenerateSegmentImage: (segment: Segment) => void;
-  onGenerateSegmentVideo: (segment: Segment) => void;
+  onGenerateSegmentImage: (segment: Segment) => Promise<string | null>;
+  onGenerateSegmentVideo: (segment: Segment) => Promise<string | null>;
   onViewSegment: (segment: Segment) => void;
   onBatchGenerateImages: () => void;
   onBatchAnimate: () => void;
+  onFullAutoGenerate: () => void;
   isBatchProcessing: boolean;
   disabled: boolean;
 }
@@ -21,6 +22,7 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({
   onViewSegment, 
   onBatchGenerateImages,
   onBatchAnimate,
+  onFullAutoGenerate,
   isBatchProcessing,
   disabled 
 }) => {
@@ -30,14 +32,9 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({
   // Counts for button states
   const idleCount = analysis.segments.filter(s => s.status === 'idle').length;
   const readyToAnimateCount = analysis.segments.filter(s => s.status === 'image-success').length;
+  const fullyCompleteCount = analysis.segments.filter(s => s.status === 'video-success').length;
 
-  // Progress logic
-  const completedImagesCount = analysis.segments.filter(s => s.status !== 'idle' && s.status !== 'generating-image').length;
-  const completedVideosCount = analysis.segments.filter(s => s.status === 'video-success').length;
-  
-  // Simple visual progress: If we have mostly images, show image progress. If we have mostly videos pending, show video progress?
-  // Let's stick to a generic "progress" based on what's actionable.
-  // Actually, we can just show a progress bar if batch processing is active.
+  const isAllComplete = fullyCompleteCount === totalCount;
   
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -74,35 +71,49 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({
 
             {/* Batch Actions */}
             <div className="flex flex-wrap gap-3">
-                {/* 1. Generate Images */}
-                {!isBatchProcessing && idleCount > 0 && (
-                    <button 
-                        onClick={onBatchGenerateImages}
-                        disabled={disabled}
-                        className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold py-2 px-5 rounded-full transition-all shadow-lg shadow-purple-900/20 text-sm"
-                    >
-                        <Zap className="w-4 h-4 fill-current" />
-                        Generate Images ({idleCount})
-                    </button>
-                )}
-
-                {/* 2. Animate Videos */}
-                {!isBatchProcessing && readyToAnimateCount > 0 && (
-                    <button 
-                        onClick={onBatchAnimate}
-                        disabled={disabled}
-                        className="flex items-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-2 px-5 rounded-full transition-all shadow-lg shadow-blue-900/20 text-sm"
-                    >
-                        <Film className="w-4 h-4" />
-                        Animate All ({readyToAnimateCount})
-                    </button>
-                )}
-
-                {isBatchProcessing && (
-                    <div className="flex items-center gap-3 bg-zinc-800 px-5 py-2 rounded-full border border-zinc-700">
+                
+                {isBatchProcessing ? (
+                    <div className="flex items-center gap-3 bg-zinc-800 px-5 py-2 rounded-full border border-zinc-700 animate-pulse">
                         <Loader2 className="w-4 h-4 animate-spin text-green-400" />
-                        <span className="text-sm font-medium text-zinc-300">Processing Batch...</span>
+                        <span className="text-sm font-medium text-zinc-300">Parallel Processing...</span>
                     </div>
+                ) : (
+                    <>
+                         {/* Full Auto Button (Only if there are things to do) */}
+                         {!isAllComplete && (
+                             <button
+                                onClick={onFullAutoGenerate}
+                                disabled={disabled}
+                                className="flex items-center gap-2 bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 hover:from-green-500 hover:to-teal-500 text-white font-bold py-2 px-6 rounded-full transition-all shadow-lg shadow-green-900/20 text-sm border border-white/10"
+                             >
+                                <Wand2 className="w-4 h-4" />
+                                Magic Auto-Generate All
+                             </button>
+                         )}
+
+                         {/* Granular Batch Actions */}
+                        {idleCount > 0 && (
+                            <button 
+                                onClick={onBatchGenerateImages}
+                                disabled={disabled}
+                                className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white font-medium py-2 px-5 rounded-full transition-all border border-zinc-700 text-sm"
+                            >
+                                <Zap className="w-4 h-4" />
+                                Images Only ({idleCount})
+                            </button>
+                        )}
+
+                        {readyToAnimateCount > 0 && (
+                            <button 
+                                onClick={onBatchAnimate}
+                                disabled={disabled}
+                                className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white font-medium py-2 px-5 rounded-full transition-all border border-zinc-700 text-sm"
+                            >
+                                <Film className="w-4 h-4" />
+                                Animate Only ({readyToAnimateCount})
+                            </button>
+                        )}
+                    </>
                 )}
             </div>
         </div>

@@ -75,13 +75,13 @@ const App: React.FC = () => {
     }
   };
 
-  const handleGenerateSegmentImage = async (segment: Segment) => {
-    if (!analysis || !videoUrl) return;
+  const handleGenerateSegmentImage = async (segment: Segment): Promise<string | null> => {
+    if (!analysis || !videoUrl) return null;
 
     // Check key
     if (!await checkApiKey()) {
         const success = await promptApiKey();
-        if(!success) return;
+        if(!success) return null;
     }
 
     // Update Segment Status
@@ -103,6 +103,8 @@ const App: React.FC = () => {
         if (activeSegment && activeSegment.id === segment.id) {
             setActiveSegment(prev => prev ? ({ ...prev, status: 'image-success', imageUrl: uri }) : null);
         }
+        
+        return uri;
 
     } catch (err: any) {
         console.error(err);
@@ -110,30 +112,20 @@ const App: React.FC = () => {
             ...prev,
             segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'error', error: err.message } : s)
         }) : null);
+        return null;
     }
   };
 
-  const handleBatchGenerateImages = async () => {
-      if (!analysis || !videoUrl) return;
-      setIsBatchProcessing(true);
+  const handleGenerateSegmentVideo = async (segment: Segment, overrideImageUrl?: string): Promise<string | null> => {
+    // We can allow an override URL to enable chaining from image generation immediately
+    const imageUrl = overrideImageUrl || segment.imageUrl;
 
-      const segmentsToProcess = analysis.segments.filter(s => s.status === 'idle');
-      
-      // Process sequentially to avoid rate limits and browser lag
-      for (const segment of segmentsToProcess) {
-          await handleGenerateSegmentImage(segment);
-      }
-      
-      setIsBatchProcessing(false);
-  };
-
-  const handleGenerateSegmentVideo = async (segment: Segment) => {
-    if (!segment.imageUrl) return;
+    if (!imageUrl) return null;
 
     // Check key
     if (!await checkApiKey()) {
         const success = await promptApiKey();
-        if(!success) return;
+        if(!success) return null;
     }
 
     // Update Status
@@ -149,8 +141,8 @@ const App: React.FC = () => {
 
     try {
         // Extract base64 data from the imageUrl (data URI)
-        const base64Data = segment.imageUrl.split(',')[1];
-        const mimeType = segment.imageUrl.split(':')[1].split(';')[0]; // likely image/png
+        const base64Data = imageUrl.split(',')[1];
+        const mimeType = imageUrl.split(':')[1].split(';')[0]; // likely image/png
 
         // Pass videoAspectRatio to respect input dimensions
         const videoUri = await generateVeoAnimation(segment.animationPrompt, base64Data, mimeType, videoAspectRatio);
@@ -163,6 +155,8 @@ const App: React.FC = () => {
         if (activeSegment && activeSegment.id === segment.id) {
             setActiveSegment(prev => prev ? ({...prev, status: 'video-success', videoUrl: videoUri}) : null);
         }
+        
+        return videoUri;
 
     } catch (err: any) {
         console.error(err);
@@ -170,20 +164,61 @@ const App: React.FC = () => {
             ...prev,
             segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'error', error: err.message } : s)
         }) : null);
+        return null;
     }
+  };
+
+  const handleBatchGenerateImages = async () => {
+      if (!analysis || !videoUrl) return;
+      setIsBatchProcessing(true);
+
+      const segmentsToProcess = analysis.segments.filter(s => s.status === 'idle');
+      
+      // Parallel execution using Promise.all
+      const promises = segmentsToProcess.map(segment => handleGenerateSegmentImage(segment));
+      await Promise.all(promises);
+      
+      setIsBatchProcessing(false);
   };
 
   const handleBatchAnimate = async () => {
     if (!analysis) return;
     setIsBatchProcessing(true);
 
-    // Filter segments that have images but don't have videos (status 'image-success')
     const segmentsToProcess = analysis.segments.filter(s => s.status === 'image-success');
 
-    for (const segment of segmentsToProcess) {
-        await handleGenerateSegmentVideo(segment);
-    }
+    // Parallel execution
+    const promises = segmentsToProcess.map(segment => handleGenerateSegmentVideo(segment));
+    await Promise.all(promises);
 
+    setIsBatchProcessing(false);
+  };
+
+  const handleFullAutoGenerate = async () => {
+    if (!analysis) return;
+    setIsBatchProcessing(true);
+
+    // Process all segments that aren't already done
+    const segments = analysis.segments;
+    
+    const promises = segments.map(async (segment) => {
+        // Skip if already has video
+        if (segment.status === 'video-success' || segment.status === 'generating-video') return;
+
+        let currentImgUrl = segment.imageUrl;
+
+        // Step 1: Generate Image if needed
+        if (segment.status === 'idle' || segment.status === 'error' || !currentImgUrl) {
+           currentImgUrl = await handleGenerateSegmentImage(segment);
+        }
+
+        // Step 2: Generate Video if we have an image
+        if (currentImgUrl) {
+            await handleGenerateSegmentVideo(segment, currentImgUrl);
+        }
+    });
+
+    await Promise.all(promises);
     setIsBatchProcessing(false);
   };
 
@@ -276,6 +311,7 @@ const App: React.FC = () => {
                 onViewSegment={handleViewSegment}
                 onBatchGenerateImages={handleBatchGenerateImages}
                 onBatchAnimate={handleBatchAnimate}
+                onFullAutoGenerate={handleFullAutoGenerate}
                 isBatchProcessing={isBatchProcessing}
                 disabled={isBatchProcessing} 
              />
@@ -287,7 +323,7 @@ const App: React.FC = () => {
                 segment={activeSegment}
                 originalVideoUrl={videoUrl}
                 onBack={handleBackToTimeline}
-                onAnimate={handleGenerateSegmentVideo}
+                onAnimate={(seg) => handleGenerateSegmentVideo(seg)}
              />
         )}
 
