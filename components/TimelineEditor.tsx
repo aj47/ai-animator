@@ -3,8 +3,9 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   Play, Pause, SkipBack, SkipForward, Volume2, VolumeX,
   Layers, Film, Sparkles, ChevronLeft, Eye, EyeOff,
-  Diamond, Maximize2, ZoomIn, ZoomOut, Clock
+  Diamond, Maximize2, ZoomIn, ZoomOut, Clock, GripVertical, GripHorizontal
 } from 'lucide-react';
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { AnalysisResult, Segment } from '../types';
 import { formatTime } from '../utils/videoUtils';
 
@@ -211,134 +212,153 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Preview Panel */}
-        <div className="flex-1 flex flex-col p-4 gap-4">
-          {/* Video Preview with Composite */}
-          <div ref={previewContainerRef} className="flex-1 relative bg-black rounded-xl overflow-hidden border border-zinc-800">
-            {/* Base Video Layer */}
-            <video
-              ref={videoRef}
-              src={videoUrl}
-              className={`absolute inset-0 w-full h-full object-contain ${!layerVisibility.video ? 'opacity-0' : ''}`}
-              playsInline
-            />
+      {/* Main Content - Vertical PanelGroup for main area and timeline */}
+      <PanelGroup direction="vertical" className="flex-1" autoSaveId="timeline-editor-vertical">
+        {/* Top Section: Preview + Sidebar */}
+        <Panel defaultSize={70} minSize={40}>
+          <PanelGroup direction="horizontal" className="h-full" autoSaveId="timeline-editor-horizontal">
+            {/* Preview Panel */}
+            <Panel defaultSize={75} minSize={40}>
+              <div className="h-full flex flex-col p-4 gap-4">
+                {/* Video Preview with Composite */}
+                <div ref={previewContainerRef} className="flex-1 relative bg-black rounded-xl overflow-hidden border border-zinc-800">
+                  {/* Base Video Layer */}
+                  <video
+                    ref={videoRef}
+                    src={videoUrl}
+                    className={`absolute inset-0 w-full h-full object-contain ${!layerVisibility.video ? 'opacity-0' : ''}`}
+                    playsInline
+                  />
 
-            {/* Animation Overlay Layer */}
-            {activeSegment?.videoUrl && layerVisibility.animation && (
-              <video
-                ref={overlayVideoRef}
-                src={activeSegment.videoUrl}
-                className="absolute inset-0 w-full h-full object-contain mix-blend-screen"
-                muted
-                loop
-                playsInline
-              />
-            )}
+                  {/* Animation Overlay Layer */}
+                  {activeSegment?.videoUrl && layerVisibility.animation && (
+                    <video
+                      ref={overlayVideoRef}
+                      src={activeSegment.videoUrl}
+                      className="absolute inset-0 w-full h-full object-contain mix-blend-screen"
+                      muted
+                      loop
+                      playsInline
+                    />
+                  )}
 
-            {/* Static Image Overlay (when no video) */}
-            {activeSegment?.imageUrl && !activeSegment.videoUrl && layerVisibility.animation && (
-              <img
-                src={activeSegment.imageUrl}
-                alt="Overlay"
-                className="absolute inset-0 w-full h-full object-contain mix-blend-screen"
-              />
-            )}
+                  {/* Static Image Overlay (when no video) */}
+                  {activeSegment?.imageUrl && !activeSegment.videoUrl && layerVisibility.animation && (
+                    <img
+                      src={activeSegment.imageUrl}
+                      alt="Overlay"
+                      className="absolute inset-0 w-full h-full object-contain mix-blend-screen"
+                    />
+                  )}
 
-            {/* Overlay Info Badge */}
-            {activeSegment && (
-              <div className="absolute top-4 left-4 bg-black/70 backdrop-blur-sm rounded-lg px-3 py-2 border border-green-500/30">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-3 h-3 text-green-400" />
-                  <span className="text-xs text-green-400 font-medium">{activeSegment.topic}</span>
-                </div>
-              </div>
-            )}
+                  {/* Overlay Info Badge */}
+                  {activeSegment && (
+                    <div className="absolute top-4 left-4 bg-black/70 backdrop-blur-sm rounded-lg px-3 py-2 border border-green-500/30">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-3 h-3 text-green-400" />
+                        <span className="text-xs text-green-400 font-medium">{activeSegment.topic}</span>
+                      </div>
+                    </div>
+                  )}
 
-            {/* Fullscreen button */}
-            <button
-              onClick={() => previewContainerRef.current?.requestFullscreen()}
-              className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 rounded-lg text-zinc-400 hover:text-white"
-            >
-              <Maximize2 className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Playback Controls */}
-          <div className="flex items-center justify-center gap-4 py-2">
-            <button
-              onClick={skipBackward}
-              className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
-            >
-              <SkipBack className="w-5 h-5" />
-            </button>
-            <button
-              onClick={togglePlay}
-              className="p-3 rounded-full bg-white hover:bg-zinc-200 text-black transition-colors"
-            >
-              {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
-            </button>
-            <button
-              onClick={skipForward}
-              className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
-            >
-              <SkipForward className="w-5 h-5" />
-            </button>
-            <div className="w-px h-6 bg-zinc-800 mx-2" />
-            <button
-              onClick={toggleMute}
-              className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
-            >
-              {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-            </button>
-            <span className="text-sm text-zinc-400 font-mono min-w-[100px]">
-              {formatTime(currentTime)} / {formatTime(duration)}
-            </span>
-          </div>
-        </div>
-
-        {/* Segment List Sidebar */}
-        <div className="w-72 border-l border-zinc-800 bg-zinc-900/30 flex flex-col">
-          <div className="p-3 border-b border-zinc-800">
-            <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
-              <Clock className="w-3 h-3" />
-              Keyframes
-            </h3>
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {analysis.segments.map((segment) => (
-              <div
-                key={segment.id}
-                onClick={() => jumpToSegment(segment)}
-                className={`
-                  p-3 border-b border-zinc-800/50 cursor-pointer transition-colors
-                  ${activeSegment?.id === segment.id ? 'bg-purple-900/20 border-l-2 border-l-purple-500' : 'hover:bg-zinc-800/50'}
-                `}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <Diamond className={`w-3 h-3 ${segment.status.includes('success') ? 'text-green-400' : 'text-zinc-500'}`} />
-                  <span className="font-mono text-xs text-zinc-400">{segment.formattedTime}</span>
-                </div>
-                <h4 className="text-sm font-medium text-white truncate">{segment.topic}</h4>
-                <p className="text-xs text-zinc-500 truncate mt-1">{segment.description}</p>
-                {segment.status.includes('success') && (
+                  {/* Fullscreen button */}
                   <button
-                    onClick={(e) => { e.stopPropagation(); onViewSegment(segment); }}
-                    className="mt-2 text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1"
+                    onClick={() => previewContainerRef.current?.requestFullscreen()}
+                    className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 rounded-lg text-zinc-400 hover:text-white"
                   >
-                    <Eye className="w-3 h-3" />
-                    View Details
+                    <Maximize2 className="w-4 h-4" />
                   </button>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+                </div>
 
-      {/* Timeline Panel */}
-      <div className="border-t border-zinc-800 bg-zinc-900/50">
+                {/* Playback Controls */}
+                <div className="flex items-center justify-center gap-4 py-2">
+                  <button
+                    onClick={skipBackward}
+                    className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+                  >
+                    <SkipBack className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={togglePlay}
+                    className="p-3 rounded-full bg-white hover:bg-zinc-200 text-black transition-colors"
+                  >
+                    {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
+                  </button>
+                  <button
+                    onClick={skipForward}
+                    className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+                  >
+                    <SkipForward className="w-5 h-5" />
+                  </button>
+                  <div className="w-px h-6 bg-zinc-800 mx-2" />
+                  <button
+                    onClick={toggleMute}
+                    className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+                  >
+                    {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                  </button>
+                  <span className="text-sm text-zinc-400 font-mono min-w-[100px]">
+                    {formatTime(currentTime)} / {formatTime(duration)}
+                  </span>
+                </div>
+              </div>
+            </Panel>
+
+            {/* Horizontal Resize Handle */}
+            <PanelResizeHandle className="w-1.5 bg-zinc-800 hover:bg-purple-500/50 transition-colors cursor-col-resize flex items-center justify-center group">
+              <GripVertical className="w-3 h-4 text-zinc-600 group-hover:text-purple-400" />
+            </PanelResizeHandle>
+
+            {/* Segment List Sidebar */}
+            <Panel defaultSize={25} minSize={15} maxSize={50}>
+              <div className="h-full border-l border-zinc-800 bg-zinc-900/30 flex flex-col">
+                <div className="p-3 border-b border-zinc-800">
+                  <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+                    <Clock className="w-3 h-3" />
+                    Keyframes
+                  </h3>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  {analysis.segments.map((segment) => (
+                    <div
+                      key={segment.id}
+                      onClick={() => jumpToSegment(segment)}
+                      className={`
+                        p-3 border-b border-zinc-800/50 cursor-pointer transition-colors
+                        ${activeSegment?.id === segment.id ? 'bg-purple-900/20 border-l-2 border-l-purple-500' : 'hover:bg-zinc-800/50'}
+                      `}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <Diamond className={`w-3 h-3 ${segment.status.includes('success') ? 'text-green-400' : 'text-zinc-500'}`} />
+                        <span className="font-mono text-xs text-zinc-400">{segment.formattedTime}</span>
+                      </div>
+                      <h4 className="text-sm font-medium text-white truncate">{segment.topic}</h4>
+                      <p className="text-xs text-zinc-500 truncate mt-1">{segment.description}</p>
+                      {segment.status.includes('success') && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onViewSegment(segment); }}
+                          className="mt-2 text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1"
+                        >
+                          <Eye className="w-3 h-3" />
+                          View Details
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Panel>
+          </PanelGroup>
+        </Panel>
+
+        {/* Vertical Resize Handle */}
+        <PanelResizeHandle className="h-1.5 bg-zinc-800 hover:bg-purple-500/50 transition-colors cursor-row-resize flex items-center justify-center group">
+          <GripHorizontal className="w-4 h-3 text-zinc-600 group-hover:text-purple-400" />
+        </PanelResizeHandle>
+
+        {/* Timeline Panel */}
+        <Panel defaultSize={30} minSize={15} maxSize={60}>
+          <div className="h-full border-t border-zinc-800 bg-zinc-900/50 overflow-auto">
         {/* Layer Controls */}
         <div className="flex items-center gap-4 px-4 py-2 border-b border-zinc-800/50">
           <div className="flex items-center gap-2 text-xs text-zinc-400">
@@ -488,7 +508,9 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             </div>
           </div>
         </div>
-      </div>
+          </div>
+        </Panel>
+      </PanelGroup>
     </div>
   );
 };
