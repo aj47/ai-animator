@@ -4,19 +4,26 @@ import {
   Play, Pause, SkipBack, SkipForward, Volume2, VolumeX,
   Layers, Film, Sparkles, ChevronLeft, Eye, EyeOff,
   Diamond, Maximize2, ZoomIn, ZoomOut, Clock, GripVertical, GripHorizontal,
-  Plus, Minus
+  Plus, Minus, Upload, StopCircle, Loader2, Zap, FolderOpen
 } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import { AnalysisResult, Segment } from '../types';
 import { formatTime } from '../utils/videoUtils';
+import { MAX_VIDEO_SIZE_MB } from '../constants';
 
 interface TimelineEditorProps {
-  videoUrl: string;
-  analysis: AnalysisResult;
-  onBack: () => void;
+  videoUrl: string | null;
+  analysis: AnalysisResult | null;
+  onBack?: () => void;
   onViewSegment: (segment: Segment) => void;
   onUpdateSegmentDuration: (segmentId: string, newDuration: number) => void;
   onUpdateSegmentTimestamp: (segmentId: string, newTimestamp: number) => void;
+  // New props for timeline-first experience
+  onFileSelect?: (file: File) => void;
+  isAnalyzing?: boolean;
+  isAutoGenerating?: boolean;
+  onStopAutoGenerate?: () => void;
+  statusMessage?: string;
 }
 
 interface LayerVisibility {
@@ -40,13 +47,19 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
   onBack,
   onViewSegment,
   onUpdateSegmentDuration,
-  onUpdateSegmentTimestamp
+  onUpdateSegmentTimestamp,
+  onFileSelect,
+  isAnalyzing = false,
+  isAutoGenerating = false,
+  onStopAutoGenerate,
+  statusMessage
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayVideoRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const animationTrackRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -60,9 +73,37 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     animation: true
   });
   const [segmentDrag, setSegmentDrag] = useState<SegmentDragState | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+
+  // Handle file selection
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0] && onFileSelect) {
+      onFileSelect(e.target.files[0]);
+    }
+  };
+
+  const handleDrag = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0] && onFileSelect) {
+      onFileSelect(e.dataTransfer.files[0]);
+    }
+  }, [onFileSelect]);
 
   // Find the currently active segment based on playback time
   const findActiveSegment = useCallback((time: number): Segment | null => {
+    if (!analysis) return null;
     // Find segment that contains this time (using segment's duration)
     for (const segment of analysis.segments) {
       const segmentDuration = segment.duration || 5;
@@ -71,7 +112,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
       }
     }
     return null;
-  }, [analysis.segments]);
+  }, [analysis]);
 
   // Update current time during playback
   useEffect(() => {
@@ -207,6 +248,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
   const handleSegmentDragMove = useCallback((e: MouseEvent) => {
     if (!segmentDrag || !animationTrackRef.current) return;
 
+    if (!analysis) return;
+
     const trackRect = animationTrackRef.current.getBoundingClientRect();
     const trackWidth = trackRect.width;
     const deltaX = e.clientX - segmentDrag.initialMouseX;
@@ -235,7 +278,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
       ));
       onUpdateSegmentDuration(segmentDrag.segmentId, Math.round(newDuration * 10) / 10);
     }
-  }, [segmentDrag, duration, analysis.segments, onUpdateSegmentTimestamp, onUpdateSegmentDuration]);
+  }, [segmentDrag, duration, analysis, onUpdateSegmentTimestamp, onUpdateSegmentDuration]);
 
   const handleSegmentDragEnd = useCallback(() => {
     setSegmentDrag(null);
@@ -261,41 +304,129 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     return duration > 0 ? (timestamp / duration) * 100 : 0;
   };
 
+  // Empty state - no video loaded
+  const isEmptyState = !videoUrl || !analysis;
+
   return (
     <div className="w-full h-screen flex flex-col bg-zinc-950">
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="video/*"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-900/50">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors"
-        >
-          <ChevronLeft className="w-4 h-4" />
-          Back to Results
-        </button>
+        {onBack ? (
+          <button
+            onClick={onBack}
+            className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            Back to Results
+          </button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center">
+              <Zap className="w-5 h-5 text-white" fill="currentColor" />
+            </div>
+            <h1 className="text-lg font-bold tracking-tight">Gemini <span className="text-zinc-400 font-light">Veo Animator</span></h1>
+          </div>
+        )}
         <h2 className="text-sm font-semibold text-white flex items-center gap-2">
           <Film className="w-4 h-4 text-purple-400" />
           Timeline Editor
         </h2>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}
-            className="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white"
-            title="Zoom Out"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
-          <span className="text-xs text-zinc-500 min-w-[40px] text-center">{Math.round(zoom * 100)}%</span>
-          <button
-            onClick={() => setZoom(Math.min(3, zoom + 0.25))}
-            className="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white"
-            title="Zoom In"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
+          {/* Stop button during auto-generation */}
+          {isAutoGenerating && onStopAutoGenerate && (
+            <button
+              onClick={onStopAutoGenerate}
+              className="flex items-center gap-2 px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white text-xs font-medium rounded-full transition-colors"
+            >
+              <StopCircle className="w-3 h-3" />
+              Stop Generation
+            </button>
+          )}
+          {!isEmptyState && (
+            <>
+              <button
+                onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}
+                className="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white"
+                title="Zoom Out"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+              <span className="text-xs text-zinc-500 min-w-[40px] text-center">{Math.round(zoom * 100)}%</span>
+              <button
+                onClick={() => setZoom(Math.min(3, zoom + 0.25))}
+                className="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white"
+                title="Zoom In"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
       </div>
 
+      {/* Empty State - File Picker */}
+      {isEmptyState && !isAnalyzing && (
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div
+            className={`
+              relative w-full max-w-2xl border-2 border-dashed rounded-2xl p-12 transition-all duration-300 ease-in-out cursor-pointer
+              ${dragActive ? 'border-pink-500 bg-pink-500/10 scale-[1.02]' : 'border-zinc-700 bg-zinc-900/50 hover:border-zinc-500'}
+            `}
+            onClick={() => fileInputRef.current?.click()}
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
+          >
+            <div className="flex flex-col items-center text-center space-y-6">
+              <div className={`p-6 rounded-full transition-colors ${dragActive ? 'bg-pink-500/20' : 'bg-zinc-800'}`}>
+                <Upload className={`w-12 h-12 ${dragActive ? 'text-pink-400' : 'text-zinc-400'}`} />
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-3xl font-bold text-white">Start a New Project</h2>
+                <p className="text-zinc-400 max-w-md">
+                  Drop a video file here or click to browse. AI will automatically detect key moments and generate animated overlays.
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button className="flex items-center gap-2 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 text-white font-bold py-3 px-8 rounded-full transition-all shadow-lg shadow-purple-900/30">
+                  <FolderOpen className="w-5 h-5" />
+                  Select Video
+                </button>
+              </div>
+              <div className="text-xs text-zinc-500 px-4 py-2 bg-zinc-900 rounded-full border border-zinc-800">
+                Max size: {MAX_VIDEO_SIZE_MB}MB • MP4, MOV, WebM
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Analyzing State */}
+      {isEmptyState && isAnalyzing && (
+        <div className="flex-1 flex flex-col items-center justify-center space-y-8">
+          <div className="relative w-24 h-24">
+            <div className="absolute inset-0 border-t-4 border-purple-500 rounded-full animate-spin"></div>
+            <div className="absolute inset-2 border-r-4 border-pink-500 rounded-full animate-spin animation-delay-200"></div>
+          </div>
+          <div className="text-center space-y-2">
+            <h3 className="text-2xl font-bold text-white">Analyzing Video Timeline</h3>
+            <p className="text-zinc-400">{statusMessage || "Gemini is analyzing your video..."}</p>
+          </div>
+        </div>
+      )}
+
       {/* Main Content - Vertical PanelGroup for main area and timeline */}
+      {!isEmptyState && (
       <PanelGroup direction="vertical" className="flex-1" autoSaveId="timeline-editor-vertical">
         {/* Top Section: Preview + Sidebar */}
         <Panel defaultSize={70} minSize={40}>
@@ -308,7 +439,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                   {/* Base Video Layer */}
                   <video
                     ref={videoRef}
-                    src={videoUrl}
+                    src={videoUrl || ''}
                     className={`absolute inset-0 w-full h-full object-contain ${!layerVisibility.video ? 'opacity-0' : ''}`}
                     playsInline
                   />
@@ -639,6 +770,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
           </div>
         </Panel>
       </PanelGroup>
+      )}
     </div>
   );
 };

@@ -26,7 +26,9 @@ export enum AppState {
   TIMELINE = 'TIMELINE',
   TIMELINE_EDITOR = 'TIMELINE_EDITOR',
   DETAIL_VIEW = 'DETAIL_VIEW',
-  ERROR = 'ERROR'
+  ERROR = 'ERROR',
+  // New states for auto-generation pipeline
+  AUTO_GENERATING = 'AUTO_GENERATING'
 }
 
 // Deprecated but kept for type safety if needed
