@@ -7,8 +7,9 @@ export interface Segment {
   description: string;
   prompt: string; // The specific prompt for generation
   animationPrompt: string; // Description of how the static asset should animate
-  status: 'idle' | 'generating' | 'success' | 'error';
+  status: 'idle' | 'generating-image' | 'image-success' | 'generating-video' | 'video-success' | 'error';
   imageUrl?: string;
+  videoUrl?: string;
   error?: string;
 }
 
@@ -21,8 +22,8 @@ export interface AnalysisResult {
 export enum AppState {
   IDLE = 'IDLE',
   ANALYZING = 'ANALYZING',
-  TIMELINE = 'TIMELINE', // Replaces PROMPT_SELECTION
-  DETAIL_VIEW = 'DETAIL_VIEW', // Replaces GENERATING/COMPLETE
+  TIMELINE = 'TIMELINE', 
+  DETAIL_VIEW = 'DETAIL_VIEW', 
   ERROR = 'ERROR'
 }
 

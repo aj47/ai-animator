@@ -121,7 +121,8 @@ export const generateImageAsset = async (
         2. Generate the requested educational graphic elements (charts, text, objects) positioned correctly in this 3D space relative to the subject (e.g. floating next to them, or in the foreground).
         3. CRITICAL: Render the entire background AND the original subject as a solid, flat CHROMA KEY GREEN (#00FF00).
         4. The final output must contain ONLY the new generated 3D elements rendered against the solid green background. Do NOT include the original person or room.
-        5. Ensure the lighting on the generated elements matches the direction of light in the input image.` },
+        5. Ensure the lighting on the generated elements matches the direction of light in the input image.
+        6. EXTREMELY IMPORTANT: Ensure there is NO green spill, green reflections, or green ambiance on the generated object itself. The edges of the object must be sharp and clean against the green background to ensure perfect chroma keying.` },
         { inlineData: { mimeType: 'image/png', data: imageBase64 } }
       ]
     },
@@ -146,4 +147,49 @@ export const generateImageAsset = async (
   if (!imageUrl) throw new Error("Image generation failed: No image returned.");
 
   return imageUrl;
+};
+
+export const generateVeoAnimation = async (
+  promptText: string,
+  imageBase64Data: string, // Pure base64 data without prefix
+  mimeType: string,
+  inputAspectRatio: string
+): Promise<string> => {
+  const ai = getAI();
+
+  // Veo only supports 16:9 (Landscape) or 9:16 (Portrait).
+  // We map the input aspect ratio to the closest supported format.
+  let veoAspectRatio = '16:9';
+  if (inputAspectRatio === '9:16' || inputAspectRatio === '3:4') {
+    veoAspectRatio = '9:16';
+  }
+
+  let operation = await ai.models.generateVideos({
+    model: 'veo-3.1-fast-generate-preview',
+    prompt: `${promptText}. Keep the background solid green (#00FF00) for chroma keying. Do NOT change the camera angle.`,
+    image: {
+      imageBytes: imageBase64Data,
+      mimeType: mimeType
+    },
+    config: {
+      numberOfVideos: 1,
+      resolution: '720p',
+      aspectRatio: veoAspectRatio as any
+    }
+  });
+
+  while (!operation.done) {
+    await new Promise(resolve => setTimeout(resolve, 5000)); // Poll every 5s
+    operation = await ai.operations.getVideosOperation({ operation: operation });
+  }
+
+  const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri;
+  if (!videoUri) throw new Error("Video generation failed");
+
+  // Fetch the actual video bytes using the API key
+  const response = await fetch(`${videoUri}&key=${process.env.API_KEY}`);
+  if (!response.ok) throw new Error("Failed to download generated video");
+  
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
 };

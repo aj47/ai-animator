@@ -5,7 +5,7 @@ import VideoUploader from './components/VideoUploader';
 import PromptSelector from './components/PromptSelector'; // Now acts as Timeline View
 import VeoGenerator from './components/VeoGenerator'; // Now acts as Detail View
 import { fileToBase64, extractFrameFromVideo, getClosestAspectRatio } from './utils/videoUtils';
-import { analyzeVideoContent, generateImageAsset, checkApiKey, promptApiKey } from './services/geminiService';
+import { analyzeVideoContent, generateImageAsset, generateVeoAnimation, checkApiKey, promptApiKey } from './services/geminiService';
 import { Zap, AlertTriangle, Key } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -13,11 +13,11 @@ const App: React.FC = () => {
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   
-  // Note: We no longer extract a single frame globally. We extract per segment.
   const [videoAspectRatio, setVideoAspectRatio] = useState<string>("16:9"); 
 
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [activeSegment, setActiveSegment] = useState<Segment | null>(null);
+  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   
   const [statusMessage, setStatusMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +75,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleGenerateSegment = async (segment: Segment) => {
+  const handleGenerateSegmentImage = async (segment: Segment) => {
     if (!analysis || !videoUrl) return;
 
     // Check key
@@ -84,33 +84,107 @@ const App: React.FC = () => {
         if(!success) return;
     }
 
-    // Update Segment Status to Generating
-    const updatedSegments = analysis.segments.map(s => 
-      s.id === segment.id ? { ...s, status: 'generating' as const } : s
-    );
-    setAnalysis({ ...analysis, segments: updatedSegments });
+    // Update Segment Status
+    setAnalysis(prev => prev ? ({
+        ...prev,
+        segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'generating-image' } : s)
+    }) : null);
 
     try {
-        // 1. Extract frame at specific timestamp
         const { base64 } = await extractFrameFromVideo(videoUrl, segment.timestamp);
-
-        // 2. Generate Image
         const uri = await generateImageAsset(segment.prompt, base64, videoAspectRatio);
 
-        // 3. Update Segment with Success
-        const successSegments = analysis.segments.map(s => 
-            s.id === segment.id ? { ...s, status: 'success' as const, imageUrl: uri } : s
-        );
-        setAnalysis({ ...analysis, segments: successSegments });
+        setAnalysis(prev => prev ? ({
+            ...prev,
+            segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'image-success', imageUrl: uri } : s)
+        }) : null);
+
+        // If this was triggered from Detail view, update active segment
+        if (activeSegment && activeSegment.id === segment.id) {
+            setActiveSegment(prev => prev ? ({ ...prev, status: 'image-success', imageUrl: uri }) : null);
+        }
 
     } catch (err: any) {
         console.error(err);
-        // Update Segment with Error
-        const errorSegments = analysis.segments.map(s => 
-            s.id === segment.id ? { ...s, status: 'error' as const, error: err.message } : s
-        );
-        setAnalysis({ ...analysis, segments: errorSegments });
+        setAnalysis(prev => prev ? ({
+            ...prev,
+            segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'error', error: err.message } : s)
+        }) : null);
     }
+  };
+
+  const handleBatchGenerateImages = async () => {
+      if (!analysis || !videoUrl) return;
+      setIsBatchProcessing(true);
+
+      const segmentsToProcess = analysis.segments.filter(s => s.status === 'idle');
+      
+      // Process sequentially to avoid rate limits and browser lag
+      for (const segment of segmentsToProcess) {
+          await handleGenerateSegmentImage(segment);
+      }
+      
+      setIsBatchProcessing(false);
+  };
+
+  const handleGenerateSegmentVideo = async (segment: Segment) => {
+    if (!segment.imageUrl) return;
+
+    // Check key
+    if (!await checkApiKey()) {
+        const success = await promptApiKey();
+        if(!success) return;
+    }
+
+    // Update Status
+    setAnalysis(prev => prev ? ({
+        ...prev,
+        segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'generating-video' } : s)
+    }) : null);
+    
+    // Also update active segment if we are in detail view
+    if (activeSegment && activeSegment.id === segment.id) {
+        setActiveSegment(prev => prev ? ({...prev, status: 'generating-video'}) : null);
+    }
+
+    try {
+        // Extract base64 data from the imageUrl (data URI)
+        const base64Data = segment.imageUrl.split(',')[1];
+        const mimeType = segment.imageUrl.split(':')[1].split(';')[0]; // likely image/png
+
+        // Pass videoAspectRatio to respect input dimensions
+        const videoUri = await generateVeoAnimation(segment.animationPrompt, base64Data, mimeType, videoAspectRatio);
+
+        setAnalysis(prev => prev ? ({
+            ...prev,
+            segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'video-success', videoUrl: videoUri } : s)
+        }) : null);
+
+        if (activeSegment && activeSegment.id === segment.id) {
+            setActiveSegment(prev => prev ? ({...prev, status: 'video-success', videoUrl: videoUri}) : null);
+        }
+
+    } catch (err: any) {
+        console.error(err);
+        setAnalysis(prev => prev ? ({
+            ...prev,
+            segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'error', error: err.message } : s)
+        }) : null);
+    }
+  };
+
+  const handleBatchAnimate = async () => {
+    if (!analysis) return;
+    setIsBatchProcessing(true);
+
+    // Filter segments that have images but don't have videos (status 'image-success')
+    const segmentsToProcess = analysis.segments.filter(s => s.status === 'image-success');
+
+    for (const segment of segmentsToProcess) {
+        await handleGenerateSegmentVideo(segment);
+    }
+
+    setIsBatchProcessing(false);
   };
 
   const handleViewSegment = (segment: Segment) => {
@@ -131,6 +205,7 @@ const App: React.FC = () => {
     setAnalysis(null);
     setActiveSegment(null);
     setError(null);
+    setIsBatchProcessing(false);
   };
 
   return (
@@ -196,9 +271,13 @@ const App: React.FC = () => {
              </div>
              <PromptSelector 
                 analysis={analysis} 
-                onGenerateSegment={handleGenerateSegment}
+                onGenerateSegmentImage={handleGenerateSegmentImage}
+                onGenerateSegmentVideo={handleGenerateSegmentVideo}
                 onViewSegment={handleViewSegment}
-                disabled={false} 
+                onBatchGenerateImages={handleBatchGenerateImages}
+                onBatchAnimate={handleBatchAnimate}
+                isBatchProcessing={isBatchProcessing}
+                disabled={isBatchProcessing} 
              />
           </div>
         )}
@@ -208,6 +287,7 @@ const App: React.FC = () => {
                 segment={activeSegment}
                 originalVideoUrl={videoUrl}
                 onBack={handleBackToTimeline}
+                onAnimate={handleGenerateSegmentVideo}
              />
         )}
 
