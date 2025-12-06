@@ -213,10 +213,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
       </div>
 
       {/* Main Content - Vertical PanelGroup for main area and timeline */}
-      <PanelGroup direction="vertical" className="flex-1">
+      <PanelGroup direction="vertical" className="flex-1" autoSaveId="timeline-editor-vertical">
         {/* Top Section: Preview + Sidebar */}
         <Panel defaultSize={70} minSize={40}>
-          <PanelGroup direction="horizontal" className="h-full">
+          <PanelGroup direction="horizontal" className="h-full" autoSaveId="timeline-editor-horizontal">
             {/* Preview Panel */}
             <Panel defaultSize={75} minSize={40}>
               <div className="h-full flex flex-col p-4 gap-4">
