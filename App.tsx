@@ -2,23 +2,26 @@
 import React, { useState, useEffect } from 'react';
 import { AppState, AnalysisResult, Segment } from './types';
 import VideoUploader from './components/VideoUploader';
-import PromptSelector from './components/PromptSelector'; // Now acts as Timeline View
-import VeoGenerator from './components/VeoGenerator'; // Now acts as Detail View
-import { fileToBase64, extractFrameFromVideo, getClosestAspectRatio } from './utils/videoUtils';
+import PromptSelector from './components/PromptSelector';
+import VideoTimeline from './components/VideoTimeline';
+import VeoGenerator from './components/VeoGenerator';
+import { fileToBase64, extractFrameFromVideo, getClosestAspectRatio, getVideoDuration } from './utils/videoUtils';
 import { analyzeVideoContent, generateImageAsset, generateVeoAnimation, checkApiKey, promptApiKey } from './services/geminiService';
-import { Zap, AlertTriangle, Key } from 'lucide-react';
+import { Zap, AlertTriangle, Key, LayoutList, Film } from 'lucide-react';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>(AppState.IDLE);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   
-  const [videoAspectRatio, setVideoAspectRatio] = useState<string>("16:9"); 
+  const [videoAspectRatio, setVideoAspectRatio] = useState<string>("16:9");
+  const [videoDuration, setVideoDuration] = useState<number>(0);
 
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [activeSegment, setActiveSegment] = useState<Segment | null>(null);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
-  
+  const [useTimelineView, setUseTimelineView] = useState(true);
+
   const [statusMessage, setStatusMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [hasKey, setHasKey] = useState(false);
@@ -55,10 +58,14 @@ const App: React.FC = () => {
     setStatusMessage("Pre-processing video...");
 
     try {
-      // 1. Get Aspect Ratio from initial frame (0s)
+      // 1. Get Aspect Ratio and Duration from video
       const { width, height } = await extractFrameFromVideo(url, 0);
       const aspectRatio = getClosestAspectRatio(width, height);
       setVideoAspectRatio(aspectRatio);
+
+      // Get video duration
+      const duration = await getVideoDuration(url);
+      setVideoDuration(duration);
 
       // 2. Prepare Base64 for Gemini
       const base64Video = await fileToBase64(file);
@@ -263,22 +270,61 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {state === AppState.TIMELINE && analysis && (
-          <div className="space-y-8">
+        {state === AppState.TIMELINE && analysis && videoUrl && (
+          <div className="space-y-6">
              <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold">Analysis Results</h2>
-                <button onClick={handleReset} className="text-sm text-zinc-500 hover:text-zinc-300">Start Over</button>
+                <div className="flex items-center gap-3">
+                  {/* View Toggle */}
+                  <div className="flex items-center bg-zinc-800 rounded-lg p-1">
+                    <button
+                      onClick={() => setUseTimelineView(true)}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                        useTimelineView ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-zinc-300'
+                      }`}
+                    >
+                      <Film className="w-4 h-4" />
+                      Timeline
+                    </button>
+                    <button
+                      onClick={() => setUseTimelineView(false)}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                        !useTimelineView ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-zinc-300'
+                      }`}
+                    >
+                      <LayoutList className="w-4 h-4" />
+                      List
+                    </button>
+                  </div>
+                  <button onClick={handleReset} className="text-sm text-zinc-500 hover:text-zinc-300">Start Over</button>
+                </div>
              </div>
-             <PromptSelector 
-                analysis={analysis} 
-                onGenerateSegmentImage={handleGenerateSegmentImage}
-                onGenerateSegmentVideo={handleGenerateSegmentVideo}
-                onViewSegment={handleViewSegment}
-                onBatchGenerateImages={handleBatchGenerateImages}
-                onBatchAnimate={handleBatchAnimate}
-                isBatchProcessing={isBatchProcessing}
-                disabled={isBatchProcessing} 
-             />
+
+             {useTimelineView ? (
+               <VideoTimeline
+                  videoUrl={videoUrl}
+                  videoDuration={videoDuration}
+                  analysis={analysis}
+                  onGenerateSegmentImage={handleGenerateSegmentImage}
+                  onGenerateSegmentVideo={handleGenerateSegmentVideo}
+                  onViewSegment={handleViewSegment}
+                  onBatchGenerateImages={handleBatchGenerateImages}
+                  onBatchAnimate={handleBatchAnimate}
+                  isBatchProcessing={isBatchProcessing}
+                  disabled={isBatchProcessing}
+               />
+             ) : (
+               <PromptSelector
+                  analysis={analysis}
+                  onGenerateSegmentImage={handleGenerateSegmentImage}
+                  onGenerateSegmentVideo={handleGenerateSegmentVideo}
+                  onViewSegment={handleViewSegment}
+                  onBatchGenerateImages={handleBatchGenerateImages}
+                  onBatchAnimate={handleBatchAnimate}
+                  isBatchProcessing={isBatchProcessing}
+                  disabled={isBatchProcessing}
+               />
+             )}
           </div>
         )}
 
