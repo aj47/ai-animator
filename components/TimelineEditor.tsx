@@ -4,19 +4,25 @@ import {
   Play, Pause, SkipBack, SkipForward, Volume2, VolumeX,
   Layers, Film, Sparkles, ChevronLeft, Eye, EyeOff,
   Diamond, Maximize2, ZoomIn, ZoomOut, Clock, GripVertical, GripHorizontal,
-  Plus, Minus
+  Plus, Minus, Upload, Square, Loader2, Image, Video, Zap, StopCircle
 } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { AnalysisResult, Segment } from '../types';
+import { AnalysisResult, Segment, GenerationProgress } from '../types';
 import { formatTime } from '../utils/videoUtils';
+import { MAX_VIDEO_SIZE_MB } from '../constants';
 
 interface TimelineEditorProps {
-  videoUrl: string;
-  analysis: AnalysisResult;
-  onBack: () => void;
+  videoUrl: string | null;
+  analysis: AnalysisResult | null;
+  onBack?: () => void;
   onViewSegment: (segment: Segment) => void;
   onUpdateSegmentDuration: (segmentId: string, newDuration: number) => void;
   onUpdateSegmentTimestamp: (segmentId: string, newTimestamp: number) => void;
+  // New props for timeline-first experience
+  onFileSelect?: (file: File) => void;
+  onStopGeneration?: () => void;
+  generationProgress?: GenerationProgress;
+  isGenerating?: boolean;
 }
 
 interface LayerVisibility {
@@ -40,13 +46,18 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
   onBack,
   onViewSegment,
   onUpdateSegmentDuration,
-  onUpdateSegmentTimestamp
+  onUpdateSegmentTimestamp,
+  onFileSelect,
+  onStopGeneration,
+  generationProgress,
+  isGenerating = false
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayVideoRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const animationTrackRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -60,9 +71,52 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     animation: true
   });
   const [segmentDrag, setSegmentDrag] = useState<SegmentDragState | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  // File handling for timeline-first experience
+  const handleDrag = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  }, []);
+
+  const validateAndPass = (file: File) => {
+    if (!file.type.startsWith('video/')) {
+      setFileError("Please upload a video file.");
+      return;
+    }
+    const sizeMB = file.size / (1024 * 1024);
+    if (sizeMB > MAX_VIDEO_SIZE_MB) {
+      setFileError(`File too large (${sizeMB.toFixed(1)}MB). Max size is ${MAX_VIDEO_SIZE_MB}MB.`);
+      return;
+    }
+    setFileError(null);
+    onFileSelect?.(file);
+  };
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      validateAndPass(e.dataTransfer.files[0]);
+    }
+  }, [onFileSelect]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      validateAndPass(e.target.files[0]);
+    }
+  };
 
   // Find the currently active segment based on playback time
   const findActiveSegment = useCallback((time: number): Segment | null => {
+    if (!analysis) return null;
     // Find segment that contains this time (using segment's duration)
     for (const segment of analysis.segments) {
       const segmentDuration = segment.duration || 5;
@@ -212,7 +266,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     const deltaX = e.clientX - segmentDrag.initialMouseX;
     const deltaTime = (deltaX / trackWidth) * duration;
 
-    const segment = analysis.segments.find(s => s.id === segmentDrag.segmentId);
+    const segment = analysis?.segments.find(s => s.id === segmentDrag.segmentId);
     if (!segment) return;
 
     if (segmentDrag.mode === 'move') {
@@ -235,7 +289,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
       ));
       onUpdateSegmentDuration(segmentDrag.segmentId, Math.round(newDuration * 10) / 10);
     }
-  }, [segmentDrag, duration, analysis.segments, onUpdateSegmentTimestamp, onUpdateSegmentDuration]);
+  }, [segmentDrag, duration, analysis?.segments, onUpdateSegmentTimestamp, onUpdateSegmentDuration]);
 
   const handleSegmentDragEnd = useCallback(() => {
     setSegmentDrag(null);
@@ -265,35 +319,64 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     <div className="w-full h-screen flex flex-col bg-zinc-950">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-900/50">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors"
-        >
-          <ChevronLeft className="w-4 h-4" />
-          Back to Results
-        </button>
-        <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-          <Film className="w-4 h-4 text-purple-400" />
-          Timeline Editor
-        </h2>
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center">
+            <Zap className="w-5 h-5 text-white" fill="currentColor" />
+          </div>
+          <h1 className="text-lg font-bold tracking-tight">Gemini <span className="text-zinc-400 font-light">Veo Animator</span></h1>
+        </div>
+
+        {/* Generation Progress in Header */}
+        {isGenerating && generationProgress && (
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 bg-zinc-800/80 rounded-full px-4 py-2">
+              <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
+              <span className="text-sm text-zinc-300">{generationProgress.statusMessage}</span>
+              <span className="text-xs text-zinc-500">
+                ({generationProgress.completedSegments}/{generationProgress.totalSegments})
+              </span>
+            </div>
+            <button
+              onClick={onStopGeneration}
+              className="flex items-center gap-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 text-sm font-medium py-2 px-4 rounded-full transition-colors border border-red-600/30"
+            >
+              <StopCircle className="w-4 h-4" />
+              Stop
+            </button>
+          </div>
+        )}
+
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}
-            className="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white"
-            title="Zoom Out"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
-          <span className="text-xs text-zinc-500 min-w-[40px] text-center">{Math.round(zoom * 100)}%</span>
-          <button
-            onClick={() => setZoom(Math.min(3, zoom + 0.25))}
-            className="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white"
-            title="Zoom In"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
+          {videoUrl && (
+            <>
+              <button
+                onClick={() => setZoom(Math.max(0.5, zoom - 0.25))}
+                className="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white"
+                title="Zoom Out"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+              <span className="text-xs text-zinc-500 min-w-[40px] text-center">{Math.round(zoom * 100)}%</span>
+              <button
+                onClick={() => setZoom(Math.min(3, zoom + 0.25))}
+                className="p-1.5 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white"
+                title="Zoom In"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
       </div>
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        accept="video/*"
+        onChange={handleFileChange}
+      />
 
       {/* Main Content - Vertical PanelGroup for main area and timeline */}
       <PanelGroup direction="vertical" className="flex-1" autoSaveId="timeline-editor-vertical">
@@ -303,18 +386,59 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             {/* Preview Panel */}
             <Panel defaultSize={75} minSize={40}>
               <div className="h-full flex flex-col p-4 gap-4">
-                {/* Video Preview with Composite */}
-                <div ref={previewContainerRef} className="flex-1 relative bg-black rounded-xl overflow-hidden border border-zinc-800">
+                {/* Video Preview with Composite - or File Upload if no video */}
+                <div
+                  ref={previewContainerRef}
+                  className={`flex-1 relative bg-black rounded-xl overflow-hidden border transition-all duration-300 ${
+                    !videoUrl
+                      ? dragActive
+                        ? 'border-pink-500 bg-pink-500/10'
+                        : 'border-zinc-700 border-dashed hover:border-zinc-500'
+                      : 'border-zinc-800'
+                  }`}
+                  onDragEnter={!videoUrl ? handleDrag : undefined}
+                  onDragLeave={!videoUrl ? handleDrag : undefined}
+                  onDragOver={!videoUrl ? handleDrag : undefined}
+                  onDrop={!videoUrl ? handleDrop : undefined}
+                >
+                  {/* File Upload UI - shown when no video */}
+                  {!videoUrl && (
+                    <div
+                      className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <div className={`p-6 rounded-full transition-colors mb-6 ${dragActive ? 'bg-pink-500/20' : 'bg-zinc-800/50'}`}>
+                        <Upload className={`w-12 h-12 ${dragActive ? 'text-pink-400' : 'text-zinc-500'}`} />
+                      </div>
+                      <div className="text-center space-y-2">
+                        <h2 className="text-2xl font-bold text-white">Upload a Video</h2>
+                        <p className="text-zinc-400 max-w-md">
+                          Drag & drop or click to browse. Gemini will analyze it and create custom overlays.
+                        </p>
+                        <div className="text-xs text-zinc-500 px-4 py-2 bg-zinc-900 rounded-full border border-zinc-800 inline-block mt-4">
+                          Max size: {MAX_VIDEO_SIZE_MB}MB • MP4, MOV, WebM
+                        </div>
+                      </div>
+                      {fileError && (
+                        <div className="mt-4 p-3 bg-red-900/20 border border-red-900/50 rounded-lg text-red-400 text-sm">
+                          {fileError}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Base Video Layer */}
-                  <video
-                    ref={videoRef}
-                    src={videoUrl}
-                    className={`absolute inset-0 w-full h-full object-contain ${!layerVisibility.video ? 'opacity-0' : ''}`}
-                    playsInline
-                  />
+                  {videoUrl && (
+                    <video
+                      ref={videoRef}
+                      src={videoUrl}
+                      className={`absolute inset-0 w-full h-full object-contain ${!layerVisibility.video ? 'opacity-0' : ''}`}
+                      playsInline
+                    />
+                  )}
 
                   {/* Animation Overlay Layer */}
-                  {activeSegment?.videoUrl && layerVisibility.animation && (
+                  {videoUrl && activeSegment?.videoUrl && layerVisibility.animation && (
                     <video
                       ref={overlayVideoRef}
                       src={activeSegment.videoUrl}
@@ -326,7 +450,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                   )}
 
                   {/* Static Image Overlay (when no video) */}
-                  {activeSegment?.imageUrl && !activeSegment.videoUrl && layerVisibility.animation && (
+                  {videoUrl && activeSegment?.imageUrl && !activeSegment.videoUrl && layerVisibility.animation && (
                     <img
                       src={activeSegment.imageUrl}
                       alt="Overlay"
@@ -335,7 +459,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                   )}
 
                   {/* Overlay Info Badge */}
-                  {activeSegment && (
+                  {videoUrl && activeSegment && (
                     <div className="absolute top-4 left-4 bg-black/70 backdrop-blur-sm rounded-lg px-3 py-2 border border-green-500/30">
                       <div className="flex items-center gap-2">
                         <Sparkles className="w-3 h-3 text-green-400" />
@@ -345,45 +469,49 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                   )}
 
                   {/* Fullscreen button */}
-                  <button
-                    onClick={() => previewContainerRef.current?.requestFullscreen()}
-                    className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 rounded-lg text-zinc-400 hover:text-white"
-                  >
-                    <Maximize2 className="w-4 h-4" />
-                  </button>
+                  {videoUrl && (
+                    <button
+                      onClick={() => previewContainerRef.current?.requestFullscreen()}
+                      className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 rounded-lg text-zinc-400 hover:text-white"
+                    >
+                      <Maximize2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
 
-                {/* Playback Controls */}
-                <div className="flex items-center justify-center gap-4 py-2">
-                  <button
-                    onClick={skipBackward}
-                    className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
-                  >
-                    <SkipBack className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={togglePlay}
-                    className="p-3 rounded-full bg-white hover:bg-zinc-200 text-black transition-colors"
-                  >
-                    {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
-                  </button>
-                  <button
-                    onClick={skipForward}
-                    className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
-                  >
-                    <SkipForward className="w-5 h-5" />
-                  </button>
-                  <div className="w-px h-6 bg-zinc-800 mx-2" />
-                  <button
-                    onClick={toggleMute}
-                    className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
-                  >
-                    {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-                  </button>
-                  <span className="text-sm text-zinc-400 font-mono min-w-[100px]">
-                    {formatTime(currentTime)} / {formatTime(duration)}
-                  </span>
-                </div>
+                {/* Playback Controls - only show when video is loaded */}
+                {videoUrl && (
+                  <div className="flex items-center justify-center gap-4 py-2">
+                    <button
+                      onClick={skipBackward}
+                      className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+                    >
+                      <SkipBack className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={togglePlay}
+                      className="p-3 rounded-full bg-white hover:bg-zinc-200 text-black transition-colors"
+                    >
+                      {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
+                    </button>
+                    <button
+                      onClick={skipForward}
+                      className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+                    >
+                      <SkipForward className="w-5 h-5" />
+                    </button>
+                    <div className="w-px h-6 bg-zinc-800 mx-2" />
+                    <button
+                      onClick={toggleMute}
+                      className="p-2 rounded-full hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors"
+                    >
+                      {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                    </button>
+                    <span className="text-sm text-zinc-400 font-mono min-w-[100px]">
+                      {formatTime(currentTime)} / {formatTime(duration)}
+                    </span>
+                  </div>
+                )}
               </div>
             </Panel>
 
@@ -398,40 +526,69 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 <div className="p-3 border-b border-zinc-800">
                   <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
                     <Clock className="w-3 h-3" />
-                    Keyframes
+                    {analysis?.segments.length ? 'Keyframes' : 'Getting Started'}
                   </h3>
                 </div>
                 <div className="flex-1 overflow-y-auto">
-                  {analysis.segments.map((segment) => (
-                    <div
-                      key={segment.id}
-                      onClick={() => jumpToSegment(segment)}
-                      className={`
-                        p-3 border-b border-zinc-800/50 cursor-pointer transition-colors
-                        ${activeSegment?.id === segment.id ? 'bg-purple-900/20 border-l-2 border-l-purple-500' : 'hover:bg-zinc-800/50'}
-                      `}
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <Diamond className={`w-3 h-3 ${segment.status.includes('success') ? 'text-green-400' : 'text-zinc-500'}`} />
-                        <span className="font-mono text-xs text-zinc-400">{segment.formattedTime}</span>
-                      </div>
-                      <h4 className="text-sm font-medium text-white truncate">{segment.topic}</h4>
-                      <p className="text-xs text-zinc-500 truncate mt-1">{segment.description}</p>
+                  {/* Empty state when no analysis */}
+                  {!analysis && (
+                    <div className="p-6 text-center text-zinc-500">
+                      <Film className="w-8 h-8 mx-auto mb-3 opacity-30" />
+                      <p className="text-sm">Upload a video to get started</p>
+                      <p className="text-xs mt-2 text-zinc-600">Gemini will analyze it and create overlay segments</p>
+                    </div>
+                  )}
 
-                      {/* Duration Controls */}
-                      <div className="flex items-center gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
-                        <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Duration:</span>
-                        <div className="flex items-center gap-1 bg-zinc-800 rounded-md border border-zinc-700">
-                          <button
-                            onClick={() => onUpdateSegmentDuration(segment.id, Math.max(1, (segment.duration || 5) - 1))}
-                            className="p-1 hover:bg-zinc-700 rounded-l-md text-zinc-400 hover:text-white transition-colors"
-                            title="Decrease duration"
-                          >
-                            <Minus className="w-3 h-3" />
-                          </button>
-                          <span className="text-xs font-mono text-zinc-300 min-w-[32px] text-center">
-                            {segment.duration || 5}s
-                          </span>
+                  {/* Analyzing state */}
+                  {isGenerating && generationProgress?.phase === 'analyzing' && (
+                    <div className="p-6 text-center">
+                      <Loader2 className="w-8 h-8 mx-auto mb-3 text-purple-400 animate-spin" />
+                      <p className="text-sm text-zinc-300">Analyzing video...</p>
+                      <p className="text-xs mt-2 text-zinc-500">{generationProgress.statusMessage}</p>
+                    </div>
+                  )}
+
+                  {/* Segment list */}
+                  {analysis?.segments.map((segment) => {
+                    const isCurrentlyGenerating = generationProgress?.currentSegment === segment.id;
+                    return (
+                      <div
+                        key={segment.id}
+                        onClick={() => videoUrl && jumpToSegment(segment)}
+                        className={`
+                          p-3 border-b border-zinc-800/50 cursor-pointer transition-colors
+                          ${activeSegment?.id === segment.id ? 'bg-purple-900/20 border-l-2 border-l-purple-500' : 'hover:bg-zinc-800/50'}
+                          ${isCurrentlyGenerating ? 'bg-purple-900/10' : ''}
+                        `}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          {segment.status === 'generating-image' && <Loader2 className="w-3 h-3 text-green-400 animate-spin" />}
+                          {segment.status === 'generating-video' && <Loader2 className="w-3 h-3 text-blue-400 animate-spin" />}
+                          {segment.status !== 'generating-image' && segment.status !== 'generating-video' && (
+                            <Diamond className={`w-3 h-3 ${segment.status.includes('success') ? 'text-green-400' : segment.status === 'error' ? 'text-red-400' : 'text-zinc-500'}`} />
+                          )}
+                          <span className="font-mono text-xs text-zinc-400">{segment.formattedTime}</span>
+                          {/* Status badges */}
+                          {segment.status === 'image-success' && <Image className="w-3 h-3 text-green-400" />}
+                          {segment.status === 'video-success' && <Video className="w-3 h-3 text-blue-400" />}
+                        </div>
+                        <h4 className="text-sm font-medium text-white truncate">{segment.topic}</h4>
+                        <p className="text-xs text-zinc-500 truncate mt-1">{segment.description}</p>
+
+                        {/* Duration Controls */}
+                        <div className="flex items-center gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
+                          <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Duration:</span>
+                          <div className="flex items-center gap-1 bg-zinc-800 rounded-md border border-zinc-700">
+                            <button
+                              onClick={() => onUpdateSegmentDuration(segment.id, Math.max(1, (segment.duration || 5) - 1))}
+                              className="p-1 hover:bg-zinc-700 rounded-l-md text-zinc-400 hover:text-white transition-colors"
+                              title="Decrease duration"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </button>
+                            <span className="text-xs font-mono text-zinc-300 min-w-[32px] text-center">
+                              {segment.duration || 5}s
+                            </span>
                           <button
                             onClick={() => onUpdateSegmentDuration(segment.id, Math.min(30, (segment.duration || 5) + 1))}
                             className="p-1 hover:bg-zinc-700 rounded-r-md text-zinc-400 hover:text-white transition-colors"
@@ -452,7 +609,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         </button>
                       )}
                     </div>
-                  ))}
+                  );
+                  })}
                 </div>
               </div>
             </Panel>
@@ -537,7 +695,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
               className="flex-1 h-10 bg-zinc-800/50 rounded border border-zinc-700 relative overflow-visible"
             >
               {/* Segment clips on animation track */}
-              {analysis.segments.map((segment) => {
+              {analysis?.segments.map((segment) => {
                 const hasContent = segment.status.includes('success');
                 const left = getSegmentPosition(segment.timestamp);
                 const segmentDuration = segment.duration || 5;
@@ -597,7 +755,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             />
 
             {/* Keyframe markers */}
-            {analysis.segments.map((segment) => {
+            {analysis?.segments.map((segment) => {
               const position = getSegmentPosition(segment.timestamp);
               const hasContent = segment.status.includes('success');
 

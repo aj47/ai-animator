@@ -29,6 +29,17 @@ export enum AppState {
   ERROR = 'ERROR'
 }
 
+// Generation pipeline states for timeline-first experience
+export type GenerationPhase = 'idle' | 'analyzing' | 'generating-prompts' | 'generating-images' | 'generating-videos' | 'complete' | 'stopped';
+
+export interface GenerationProgress {
+  phase: GenerationPhase;
+  currentSegment?: string;
+  completedSegments: number;
+  totalSegments: number;
+  statusMessage: string;
+}
+
 // Deprecated but kept for type safety if needed
 export interface VeoPrompt {
   id: string;
