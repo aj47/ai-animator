@@ -120,40 +120,47 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({
 
         <div className="space-y-3">
           {analysis.segments.map((segment) => (
-            <div 
+            <div
               key={segment.id}
+              onClick={() => onViewSegment(segment)}
               className={`
-                relative flex items-center gap-4 p-4 rounded-xl border transition-all duration-300
+                relative flex flex-col lg:flex-row lg:items-center gap-4 p-4 rounded-xl border transition-all duration-300 cursor-pointer
                 ${segment.status.includes('success')
-                  ? 'bg-green-900/10 border-green-500/30' 
-                  : 'bg-zinc-900/50 border-zinc-800 hover:border-zinc-700'}
+                  ? 'bg-green-900/10 border-green-500/30 hover:border-green-500/50'
+                  : 'bg-zinc-900/50 border-zinc-800 hover:border-zinc-600'}
               `}
             >
-              {/* Timestamp */}
-              <div className="flex flex-col items-center justify-center min-w-[60px] text-zinc-500">
-                <Clock className="w-4 h-4 mb-1" />
-                <span className="font-mono text-xs font-bold">{segment.formattedTime}</span>
-              </div>
+              {/* Top Row: Timestamp + Topic + Actions */}
+              <div className="flex items-center gap-4 w-full lg:w-auto">
+                {/* Timestamp */}
+                <div className="flex flex-col items-center justify-center min-w-[60px] text-zinc-500">
+                  <Clock className="w-4 h-4 mb-1" />
+                  <span className="font-mono text-xs font-bold">{segment.formattedTime}</span>
+                </div>
 
-              {/* Content */}
-              <div className="flex-1 min-w-0">
-                <h4 className="text-white font-bold truncate pr-4">{segment.topic}</h4>
-                <p className="text-zinc-400 text-sm line-clamp-1">{segment.description}</p>
-                <div className="flex flex-wrap items-center gap-2 mt-2">
-                    <span className="inline-flex items-center gap-1 text-xs text-zinc-500 bg-zinc-800/50 px-2 py-0.5 rounded border border-zinc-800 truncate max-w-xs">
-                        {segment.prompt}
-                    </span>
-                    {segment.animationPrompt && (
-                        <span className="inline-flex items-center gap-1 text-xs text-blue-400/80 bg-blue-900/10 px-2 py-0.5 rounded border border-blue-900/30 truncate max-w-xs">
-                            <Move className="w-3 h-3" />
-                            {segment.animationPrompt}
-                        </span>
-                    )}
+                {/* Topic & Description */}
+                <div className="flex-1 min-w-0 lg:min-w-[200px]">
+                  <h4 className="text-white font-bold">{segment.topic}</h4>
+                  <p className="text-zinc-400 text-sm line-clamp-2">{segment.description}</p>
                 </div>
               </div>
 
+              {/* Prompts - expanded view */}
+              <div className="flex-1 flex flex-col gap-2 min-w-0">
+                <div className="flex items-start gap-2">
+                  <Sparkles className="w-3 h-3 text-green-400 mt-0.5 shrink-0" />
+                  <p className="text-xs text-zinc-400 line-clamp-2">{segment.prompt}</p>
+                </div>
+                {segment.animationPrompt && (
+                  <div className="flex items-start gap-2">
+                    <Move className="w-3 h-3 text-blue-400 mt-0.5 shrink-0" />
+                    <p className="text-xs text-blue-400/80 line-clamp-2">{segment.animationPrompt}</p>
+                  </div>
+                )}
+              </div>
+
               {/* Actions */}
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 shrink-0" onClick={(e) => e.stopPropagation()}>
                 {/* IDLE: Generate Image */}
                 {segment.status === 'idle' && (
                   <button
@@ -162,7 +169,7 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({
                     className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white text-sm font-medium transition-colors border border-zinc-700"
                   >
                     <Sparkles className="w-4 h-4 text-green-400" />
-                    Image
+                    Generate
                   </button>
                 )}
 
@@ -178,7 +185,7 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({
                 {(segment.status === 'image-success' || segment.status === 'generating-video' || segment.status === 'video-success') && segment.imageUrl && (
                   <div className="flex items-center gap-3">
                     {/* Thumbnail Preview */}
-                    <div className="h-10 w-16 bg-black rounded border border-green-500/50 overflow-hidden relative group cursor-pointer" onClick={() => onViewSegment(segment)}>
+                    <div className="h-12 w-20 bg-black rounded border border-green-500/50 overflow-hidden relative group cursor-pointer">
                          <img src={segment.imageUrl} className="w-full h-full object-cover" alt="Preview" />
                          {segment.status === 'video-success' && (
                             <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
@@ -206,20 +213,25 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({
                             Veo...
                         </div>
                     )}
-
-                    <button
-                      onClick={() => onViewSegment(segment)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500 hover:bg-green-400 text-black text-sm font-bold transition-colors"
-                    >
-                      <Eye className="w-4 h-4" />
-                      View
-                    </button>
                   </div>
                 )}
-                 
-                 {segment.status === 'error' && (
-                    <span className="text-red-400 text-xs">Failed</span>
-                 )}
+
+                {segment.status === 'error' && (
+                  <span className="text-red-400 text-xs">Failed</span>
+                )}
+
+                {/* Always show View/Details button */}
+                <button
+                  onClick={() => onViewSegment(segment)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
+                    segment.imageUrl
+                      ? 'bg-green-500 hover:bg-green-400 text-black'
+                      : 'bg-zinc-700 hover:bg-zinc-600 text-white'
+                  }`}
+                >
+                  <Eye className="w-4 h-4" />
+                  {segment.imageUrl ? 'View' : 'Details'}
+                </button>
               </div>
             </div>
           ))}

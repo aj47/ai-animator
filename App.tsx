@@ -379,6 +379,7 @@ const App: React.FC = () => {
                 onAnimate={(seg) => handleGenerateSegmentVideo(seg)}
                 onRegenerateImage={handleRegenerateImage}
                 onUpdateSegmentPrompts={handleUpdateSegmentPrompts}
+                onGenerateImage={handleGenerateSegmentImage}
              />
         )}
 

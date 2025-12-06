@@ -10,9 +10,10 @@ interface VeoGeneratorProps {
   onAnimate: (segment: Segment) => void;
   onRegenerateImage: (segment: Segment) => void;
   onUpdateSegmentPrompts: (segmentId: string, prompt: string, animationPrompt: string) => void;
+  onGenerateImage: (segment: Segment) => void;
 }
 
-const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, onBack, onAnimate, onRegenerateImage, onUpdateSegmentPrompts }) => {
+const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, onBack, onAnimate, onRegenerateImage, onUpdateSegmentPrompts, onGenerateImage }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Edit mode state
@@ -60,12 +61,16 @@ const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, 
 
   const isGenerating = segment.status === 'generating-image' || segment.status === 'generating-video';
 
-  if (!segment.imageUrl) return null;
+  const handleGenerateAndSave = () => {
+    onUpdateSegmentPrompts(segment.id, editedPrompt, editedAnimationPrompt);
+    setIsEditingPrompt(false);
+    setTimeout(() => onGenerateImage(segment), 50);
+  };
 
   return (
     <div className="w-full max-w-6xl mx-auto animate-in fade-in zoom-in-95 duration-300">
-      
-      <button 
+
+      <button
         onClick={onBack}
         className="mb-6 flex items-center gap-2 text-zinc-400 hover:text-white transition-colors group"
       >
@@ -74,13 +79,13 @@ const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, 
       </button>
 
       <div className="flex flex-col items-center justify-center space-y-6">
-          
+
           <div className="flex flex-col items-center text-center space-y-1">
               <span className="text-green-500 font-mono text-xs font-bold uppercase tracking-wider">
                 {segment.formattedTime} • {segment.topic}
               </span>
               <h2 className="text-2xl font-bold text-white">
-                  Generated Overlay
+                  {segment.imageUrl ? 'Generated Overlay' : 'Segment Details'}
               </h2>
           </div>
 
@@ -93,10 +98,10 @@ const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, 
                           <button onClick={handleReplay} className="text-xs text-zinc-400 hover:text-white flex items-center gap-1"><Play className="w-3 h-3" /> Replay Segment</button>
                       </div>
                       <div className="relative aspect-video bg-black rounded-xl overflow-hidden border border-zinc-800">
-                          <video 
+                          <video
                               ref={videoRef}
-                              src={originalVideoUrl} 
-                              className="w-full h-full object-contain opacity-80" 
+                              src={originalVideoUrl}
+                              className="w-full h-full object-contain opacity-80"
                               controls
                               playsInline
                           />
@@ -107,29 +112,44 @@ const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, 
                   </div>
               )}
 
-              {/* Generated Result (Image or Video) */}
+              {/* Generated Result (Image or Video) OR Placeholder */}
               <div className="flex flex-col gap-2 flex-1 w-full max-w-lg">
                    <span className="text-xs font-bold text-green-500 uppercase tracking-widest text-center lg:text-left">
-                       {segment.videoUrl ? 'Green Screen Animation' : 'Green Screen Overlay'}
+                       {segment.videoUrl ? 'Green Screen Animation' : segment.imageUrl ? 'Green Screen Overlay' : 'Preview Area'}
                    </span>
-                  
-                  <div className="relative aspect-video bg-black rounded-xl overflow-hidden shadow-2xl shadow-green-900/20 border border-green-500/50">
+
+                  <div className="relative aspect-video bg-black rounded-xl overflow-hidden shadow-2xl shadow-green-900/20 border border-zinc-700">
                       {segment.videoUrl ? (
-                          <video 
-                            src={segment.videoUrl} 
-                            className="w-full h-full object-contain" 
-                            autoPlay 
-                            loop 
-                            muted 
-                            playsInline 
+                          <video
+                            src={segment.videoUrl}
+                            className="w-full h-full object-contain"
+                            autoPlay
+                            loop
+                            muted
+                            playsInline
                             controls
                           />
-                      ) : (
-                          <img 
-                              src={segment.imageUrl} 
+                      ) : segment.imageUrl ? (
+                          <img
+                              src={segment.imageUrl}
                               alt="Generated Green Screen Asset"
-                              className="w-full h-full object-contain" 
+                              className="w-full h-full object-contain"
                           />
+                      ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center text-zinc-500">
+                            {isGenerating ? (
+                              <>
+                                <Loader2 className="w-12 h-12 animate-spin text-green-500 mb-3" />
+                                <span className="text-sm">Generating image...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="w-12 h-12 mb-3 opacity-30" />
+                                <span className="text-sm">No image generated yet</span>
+                                <span className="text-xs text-zinc-600 mt-1">Edit prompts below, then generate</span>
+                              </>
+                            )}
+                          </div>
                       )}
                   </div>
 
@@ -212,14 +232,14 @@ const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, 
 
           {/* Actions */}
           <div className="flex flex-wrap gap-4 pt-4 border-t border-zinc-800 w-full justify-center">
-              {/* Regenerate Button */}
+              {/* Generate / Regenerate Button */}
               {!isEditingPrompt && (
                 isGenerating ? (
                   <div className="flex items-center gap-2 text-zinc-400 text-sm font-medium px-4 py-3">
                     <Loader2 className="w-4 h-4 animate-spin" />
                     {segment.status === 'generating-image' ? 'Generating Image...' : 'Generating Animation...'}
                   </div>
-                ) : (
+                ) : segment.imageUrl ? (
                   <button
                     onClick={() => onRegenerateImage(segment)}
                     className="flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white font-medium py-3 px-6 rounded-full transition-colors border border-zinc-700"
@@ -227,11 +247,19 @@ const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, 
                     <RefreshCw className="w-4 h-4" />
                     Regenerate Image
                   </button>
+                ) : (
+                  <button
+                    onClick={() => onGenerateImage(segment)}
+                    className="flex items-center justify-center gap-2 bg-green-600 hover:bg-green-500 text-white font-medium py-3 px-6 rounded-full transition-colors shadow-lg shadow-green-900/20"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Generate Image
+                  </button>
                 )
               )}
 
-              {/* Animate Button */}
-              {!segment.videoUrl && !isEditingPrompt && !isGenerating && (
+              {/* Animate Button - only show if image exists */}
+              {segment.imageUrl && !segment.videoUrl && !isEditingPrompt && !isGenerating && (
                 <button
                   onClick={() => onAnimate(segment)}
                   className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-medium py-3 px-6 rounded-full transition-colors shadow-lg shadow-blue-900/20"
@@ -241,8 +269,8 @@ const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, 
                 </button>
               )}
 
-              {/* Download */}
-              {!isEditingPrompt && (
+              {/* Download - only show if image exists */}
+              {!isEditingPrompt && segment.imageUrl && (
                 segment.videoUrl ? (
                    <a
                       href={segment.videoUrl}
