@@ -8,6 +8,11 @@ import { formatTime } from "../utils/videoUtils";
 const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const checkApiKey = async (): Promise<boolean> => {
+  // Check for env variable first (local development)
+  if (process.env.API_KEY || process.env.GEMINI_API_KEY) {
+    return true;
+  }
+  // Then check AI Studio environment
   const win = window as any;
   if (win.aistudio && win.aistudio.hasSelectedApiKey) {
     return await win.aistudio.hasSelectedApiKey();
@@ -16,6 +21,10 @@ export const checkApiKey = async (): Promise<boolean> => {
 };
 
 export const promptApiKey = async (): Promise<boolean> => {
+  // In local dev with env key, nothing to prompt
+  if (process.env.API_KEY || process.env.GEMINI_API_KEY) {
+    return true;
+  }
   const win = window as any;
   if (win.aistudio && win.aistudio.openSelectKey) {
     await win.aistudio.openSelectKey();
