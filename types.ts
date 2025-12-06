@@ -11,6 +11,7 @@ export interface Segment {
   imageUrl?: string;
   videoUrl?: string;
   error?: string;
+  duration: number; // Duration of the segment in seconds (default: 5)
 }
 
 export interface AnalysisResult {

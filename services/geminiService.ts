@@ -8,6 +8,10 @@ import { formatTime } from "../utils/videoUtils";
 const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const checkApiKey = async (): Promise<boolean> => {
+  // Check for env variable first (local development)
+  if (process.env.API_KEY || process.env.GEMINI_API_KEY) {
+    return true;
+  }
   const win = window as any;
   if (win.aistudio && win.aistudio.hasSelectedApiKey) {
     return await win.aistudio.hasSelectedApiKey();
@@ -16,6 +20,10 @@ export const checkApiKey = async (): Promise<boolean> => {
 };
 
 export const promptApiKey = async (): Promise<boolean> => {
+  // In local dev with env key, nothing to prompt
+  if (process.env.API_KEY || process.env.GEMINI_API_KEY) {
+    return true;
+  }
   const win = window as any;
   if (win.aistudio && win.aistudio.openSelectKey) {
     await win.aistudio.openSelectKey();
@@ -88,11 +96,12 @@ export const analyzeVideoContent = async (videoBase64: string, mimeType: string)
   
   const result = JSON.parse(text) as AnalysisResult;
   
-  // Post-process to add formatted time and default status
+  // Post-process to add formatted time, default status, and default duration
   result.segments = result.segments.map(s => ({
     ...s,
     formattedTime: formatTime(s.timestamp),
-    status: 'idle'
+    status: 'idle',
+    duration: 5 // Default duration of 5 seconds
   }));
 
   return result;
