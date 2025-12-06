@@ -29,6 +29,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayVideoRef = useRef<HTMLVideoElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -81,7 +82,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     };
 
     const handlePlay = () => setIsPlaying(true);
-    const handlePause = () => setIsPlaying(false);
+    const handlePause = () => {
+      setIsPlaying(false);
+      overlayVideoRef.current?.pause();
+    };
 
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
@@ -212,7 +216,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         {/* Preview Panel */}
         <div className="flex-1 flex flex-col p-4 gap-4">
           {/* Video Preview with Composite */}
-          <div className="flex-1 relative bg-black rounded-xl overflow-hidden border border-zinc-800">
+          <div ref={previewContainerRef} className="flex-1 relative bg-black rounded-xl overflow-hidden border border-zinc-800">
             {/* Base Video Layer */}
             <video
               ref={videoRef}
@@ -254,7 +258,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
             {/* Fullscreen button */}
             <button
-              onClick={() => videoRef.current?.requestFullscreen()}
+              onClick={() => previewContainerRef.current?.requestFullscreen()}
               className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 rounded-lg text-zinc-400 hover:text-white"
             >
               <Maximize2 className="w-4 h-4" />
