@@ -3,7 +3,7 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   Play, Pause, SkipBack, SkipForward, Volume2, VolumeX,
   Layers, Film, Sparkles, ChevronLeft, Eye, EyeOff,
-  Diamond, Maximize2, ZoomIn, ZoomOut, Clock
+  Diamond, Maximize2, ZoomIn, ZoomOut, Clock, Plus, Minus
 } from 'lucide-react';
 import { AnalysisResult, Segment } from '../types';
 import { formatTime } from '../utils/videoUtils';
@@ -13,6 +13,7 @@ interface TimelineEditorProps {
   analysis: AnalysisResult;
   onBack: () => void;
   onViewSegment: (segment: Segment) => void;
+  onUpdateSegmentDuration: (segmentId: string, newDuration: number) => void;
 }
 
 interface LayerVisibility {
@@ -24,7 +25,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
   videoUrl,
   analysis,
   onBack,
-  onViewSegment
+  onViewSegment,
+  onUpdateSegmentDuration
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayVideoRef = useRef<HTMLVideoElement>(null);
@@ -45,9 +47,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
   // Find the currently active segment based on playback time
   const findActiveSegment = useCallback((time: number): Segment | null => {
-    // Find segment that contains this time (within a 5-second window after the keyframe)
+    // Find segment that contains this time (within the segment's duration after the keyframe)
     for (const segment of analysis.segments) {
-      if (time >= segment.timestamp && time < segment.timestamp + 5) {
+      const segmentDuration = segment.duration || 5;
+      if (time >= segment.timestamp && time < segment.timestamp + segmentDuration) {
         return segment;
       }
     }
@@ -322,6 +325,31 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 </div>
                 <h4 className="text-sm font-medium text-white truncate">{segment.topic}</h4>
                 <p className="text-xs text-zinc-500 truncate mt-1">{segment.description}</p>
+
+                {/* Duration Controls */}
+                <div className="flex items-center gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
+                  <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Duration:</span>
+                  <div className="flex items-center gap-1 bg-zinc-800 rounded-md border border-zinc-700">
+                    <button
+                      onClick={() => onUpdateSegmentDuration(segment.id, Math.max(1, (segment.duration || 5) - 1))}
+                      className="p-1 hover:bg-zinc-700 rounded-l-md text-zinc-400 hover:text-white transition-colors"
+                      title="Decrease duration"
+                    >
+                      <Minus className="w-3 h-3" />
+                    </button>
+                    <span className="text-xs font-mono text-zinc-300 min-w-[32px] text-center">
+                      {segment.duration || 5}s
+                    </span>
+                    <button
+                      onClick={() => onUpdateSegmentDuration(segment.id, Math.min(30, (segment.duration || 5) + 1))}
+                      className="p-1 hover:bg-zinc-700 rounded-r-md text-zinc-400 hover:text-white transition-colors"
+                      title="Increase duration"
+                    >
+                      <Plus className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+
                 {segment.status.includes('success') && (
                   <button
                     onClick={(e) => { e.stopPropagation(); onViewSegment(segment); }}
@@ -409,8 +437,9 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
               {analysis.segments.map((segment) => {
                 const hasContent = segment.status.includes('success');
                 const left = getSegmentPosition(segment.timestamp);
-                // Assume 5 second duration for each animation clip
-                const width = duration > 0 ? (5 / duration) * 100 : 5;
+                // Use segment's duration (with fallback to 5 seconds)
+                const segmentDuration = segment.duration || 5;
+                const width = duration > 0 ? (segmentDuration / duration) * 100 : 5;
 
                 return (
                   <div
@@ -424,7 +453,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                       ${activeSegment?.id === segment.id ? 'ring-2 ring-white/50' : ''}
                     `}
                     style={{ left: `${left}%`, width: `${Math.max(width, 2)}%` }}
-                    title={segment.topic}
+                    title={`${segment.topic} (${segmentDuration}s)`}
                   >
                     <div className="px-1.5 py-0.5 overflow-hidden">
                       <span className="text-[9px] text-white font-medium truncate block">{segment.topic}</span>

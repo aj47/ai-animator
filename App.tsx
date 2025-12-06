@@ -241,6 +241,15 @@ const App: React.FC = () => {
     setState(AppState.TIMELINE);
   };
 
+  const handleUpdateSegmentDuration = (segmentId: string, newDuration: number) => {
+    setAnalysis(prev => prev ? ({
+      ...prev,
+      segments: prev.segments.map(s =>
+        s.id === segmentId ? { ...s, duration: newDuration } : s
+      )
+    }) : null);
+  };
+
   const handleReset = () => {
     if (videoUrl) URL.revokeObjectURL(videoUrl);
     setVideoUrl(null);
@@ -352,6 +361,7 @@ const App: React.FC = () => {
                   analysis={analysis}
                   onBack={handleBackFromEditor}
                   onViewSegment={handleViewSegment}
+                  onUpdateSegmentDuration={handleUpdateSegmentDuration}
                />
              </div>
         )}

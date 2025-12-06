@@ -88,11 +88,12 @@ export const analyzeVideoContent = async (videoBase64: string, mimeType: string)
   
   const result = JSON.parse(text) as AnalysisResult;
   
-  // Post-process to add formatted time and default status
+  // Post-process to add formatted time, default status, and default duration
   result.segments = result.segments.map(s => ({
     ...s,
     formattedTime: formatTime(s.timestamp),
-    status: 'idle'
+    status: 'idle',
+    duration: 5 // Default duration in seconds
   }));
 
   return result;
