@@ -108,31 +108,35 @@ export const analyzeVideoContent = async (videoBase64: string, mimeType: string)
   return result;
 };
 
-export const generateImageAsset = async (
-  promptText: string, 
+/**
+ * Step 1: Generate a scene with overlay graphics placed in the correct positions
+ * This recreates the original scene and adds the new diagrams/illustrations/highlights
+ */
+export const generateSceneWithOverlay = async (
+  promptText: string,
   imageBase64: string,
   aspectRatio: string,
   onProgress?: (msg: string) => void
 ): Promise<string> => {
   const ai = getAI();
 
-  if (onProgress) onProgress("Generating green screen overlay...");
+  if (onProgress) onProgress("Step 1: Recreating scene with overlay graphics...");
 
   const response = await ai.models.generateContent({
     model: GENERATION_MODEL,
     contents: {
       parts: [
-        { text: `${promptText}. 
-        
-        TASK: Generate a high-quality, chroma-keyable AR overlay asset.
+        { text: `${promptText}.
+
+        TASK: Recreate this scene with new educational overlay graphics positioned correctly.
 
         INSTRUCTIONS:
-        1. Analyze the provided input image to understand the 3D perspective, lighting conditions, and the position of the speaker/subject.
-        2. Generate the requested educational graphic elements (charts, text, objects) positioned correctly in this 3D space relative to the subject (e.g. floating next to them, or in the foreground).
-        3. CRITICAL: Render the entire background AND the original subject as a solid, flat CHROMA KEY GREEN (#00FF00).
-        4. The final output must contain ONLY the new generated 3D elements rendered against the solid green background. Do NOT include the original person or room.
-        5. Ensure the lighting on the generated elements matches the direction of light in the input image.
-        6. EXTREMELY IMPORTANT: Ensure there is NO green spill, green reflections, or green ambiance on the generated object itself. The edges of the object must be sharp and clean against the green background to ensure perfect chroma keying.` },
+        1. Carefully analyze the provided input image to understand the 3D perspective, lighting conditions, camera angle, and the position of all elements (speaker, background, objects).
+        2. RECREATE the entire scene faithfully - keep the speaker/subject, the background, and all original elements.
+        3. ADD the requested educational graphic elements (charts, text, diagrams, highlights, illustrations) positioned correctly in this 3D space.
+        4. Position the new graphics in a way that makes sense spatially - floating next to the subject, in the foreground, or as overlays that don't obscure the main subject.
+        5. Ensure the lighting, shadows, and perspective of the new elements match the original scene perfectly.
+        6. The output should look like an augmented reality view where the new graphics exist naturally in the original scene.` },
         { inlineData: { mimeType: 'image/png', data: imageBase64 } }
       ]
     },
@@ -145,18 +149,104 @@ export const generateImageAsset = async (
 
   let imageUrl = "";
   if (response.candidates && response.candidates[0].content.parts) {
-      for (const part of response.candidates[0].content.parts) {
-          if (part.inlineData) {
-              const base64Data = part.inlineData.data;
-              imageUrl = `data:${part.inlineData.mimeType};base64,${base64Data}`;
-              break;
-          }
+    for (const part of response.candidates[0].content.parts) {
+      if (part.inlineData) {
+        const base64Data = part.inlineData.data;
+        imageUrl = `data:${part.inlineData.mimeType};base64,${base64Data}`;
+        break;
       }
+    }
   }
 
-  if (!imageUrl) throw new Error("Image generation failed: No image returned.");
+  if (!imageUrl) throw new Error("Scene recreation failed: No image returned.");
 
   return imageUrl;
+};
+
+/**
+ * Step 2: Remove all original elements and replace background with green screen
+ * Takes the scene with overlays and isolates only the new graphics on green screen
+ */
+export const generateGreenScreenBackground = async (
+  sceneImageBase64: string,
+  aspectRatio: string,
+  onProgress?: (msg: string) => void
+): Promise<string> => {
+  const ai = getAI();
+
+  if (onProgress) onProgress("Step 2: Generating green screen background...");
+
+  const response = await ai.models.generateContent({
+    model: GENERATION_MODEL,
+    contents: {
+      parts: [
+        { text: `TASK: Create a chroma-keyable overlay by replacing the background with green screen.
+
+        INSTRUCTIONS:
+        1. Analyze the provided image which contains a scene with educational graphics/overlays (charts, text, diagrams, etc.).
+        2. IDENTIFY all the NEW graphics elements that were added to the scene (charts, 3D text, diagrams, illustrations, icons, etc.).
+        3. REMOVE the original scene elements completely - remove any people, the original background, furniture, walls, everything from the original video frame.
+        4. KEEP ONLY the educational graphics/overlay elements.
+        5. Replace the ENTIRE background with a solid, flat CHROMA KEY GREEN (#00FF00).
+        6. The final output must contain ONLY the new generated graphics rendered against the solid green background.
+        7. EXTREMELY IMPORTANT: Ensure there is NO green spill, green reflections, or green tint on the graphics themselves. The edges must be sharp and clean for perfect chroma keying.
+        8. Maintain the exact position, size, and perspective of the graphics as they appeared in the input image.` },
+        { inlineData: { mimeType: 'image/png', data: sceneImageBase64 } }
+      ]
+    },
+    config: {
+      imageConfig: {
+        aspectRatio: aspectRatio as any
+      }
+    }
+  });
+
+  let imageUrl = "";
+  if (response.candidates && response.candidates[0].content.parts) {
+    for (const part of response.candidates[0].content.parts) {
+      if (part.inlineData) {
+        const base64Data = part.inlineData.data;
+        imageUrl = `data:${part.inlineData.mimeType};base64,${base64Data}`;
+        break;
+      }
+    }
+  }
+
+  if (!imageUrl) throw new Error("Green screen generation failed: No image returned.");
+
+  return imageUrl;
+};
+
+/**
+ * Main function: Two-step image generation process
+ * Step 1: Recreate scene with overlay graphics in correct positions
+ * Step 2: Remove original elements and replace background with green screen
+ */
+export const generateImageAsset = async (
+  promptText: string,
+  imageBase64: string,
+  aspectRatio: string,
+  onProgress?: (msg: string) => void
+): Promise<string> => {
+  // Step 1: Generate scene with overlays positioned correctly
+  const sceneWithOverlay = await generateSceneWithOverlay(
+    promptText,
+    imageBase64,
+    aspectRatio,
+    onProgress
+  );
+
+  // Extract base64 from the data URL for step 2
+  const sceneBase64 = sceneWithOverlay.split(',')[1];
+
+  // Step 2: Replace background with green screen
+  const greenScreenResult = await generateGreenScreenBackground(
+    sceneBase64,
+    aspectRatio,
+    onProgress
+  );
+
+  return greenScreenResult;
 };
 
 export const generateVeoAnimation = async (
