@@ -719,7 +719,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
                         return (
                           <div
-                            key={segment.id}
+                            key={`${segment.id}-${segment.status}`}
                             className={`
                               absolute top-0.5 bottom-0.5 rounded cursor-grab select-none
                               ${getStatusClass()}
@@ -888,7 +888,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 <div className="flex-1 overflow-y-auto">
                   {analysis?.segments.map((segment) => (
                     <div
-                      key={segment.id}
+                      key={`${segment.id}-${segment.status}-${segment.imageUrl ? 'img' : 'no-img'}`}
                       onClick={() => jumpToSegment(segment)}
                       className={`
                         p-3 border-b border-zinc-800/50 cursor-pointer transition-colors
