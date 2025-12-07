@@ -324,19 +324,23 @@ const App: React.FC = () => {
   const handleBatchGenerateImages = async () => {
       if (!analysis || !videoUrl) return;
       setIsBatchProcessing(true);
+      stopGenerationRef.current = false;
+      setPipelineState(prev => ({ ...prev, isPaused: false }));
 
       const segmentsToProcess = analysis.segments.filter(s => s.status === 'idle');
-      
+
       // Parallel execution using Promise.all
       const promises = segmentsToProcess.map(segment => handleGenerateSegmentImage(segment));
       await Promise.all(promises);
-      
+
       setIsBatchProcessing(false);
   };
 
   const handleBatchAnimate = async () => {
     if (!analysis) return;
     setIsBatchProcessing(true);
+    stopGenerationRef.current = false;
+    setPipelineState(prev => ({ ...prev, isPaused: false }));
 
     const segmentsToProcess = analysis.segments.filter(s => s.status === 'image-success');
 
@@ -350,6 +354,8 @@ const App: React.FC = () => {
   const handleFullAutoGenerate = async () => {
     if (!analysis) return;
     setIsBatchProcessing(true);
+    stopGenerationRef.current = false;
+    setPipelineState(prev => ({ ...prev, isPaused: false }));
 
     // Process all segments that aren't already done
     const segments = analysis.segments;
