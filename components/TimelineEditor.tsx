@@ -91,6 +91,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
   // Chroma key state
   const [isPickingColor, setIsPickingColor] = useState(false);
 
+  // Overlay drag state
+  const [isOverlayDragging, setIsOverlayDragging] = useState(false);
+  const [overlayDragStart, setOverlayDragStart] = useState<{ x: number; y: number; initialTransform: OverlayTransform } | null>(null);
+
   // File picker handlers
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -378,6 +382,56 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     return duration > 0 ? (timestamp / duration) * 100 : 0;
   };
 
+  // Overlay drag handlers
+  const handleOverlayDragStart = useCallback((e: React.MouseEvent) => {
+    if (isPickingColor || !activeSegment) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const currentTransform = activeSegment.overlayTransform || DEFAULT_OVERLAY_TRANSFORM;
+    setIsOverlayDragging(true);
+    setOverlayDragStart({
+      x: e.clientX,
+      y: e.clientY,
+      initialTransform: { ...currentTransform }
+    });
+  }, [isPickingColor, activeSegment]);
+
+  const handleOverlayDragMove = useCallback((e: MouseEvent) => {
+    if (!isOverlayDragging || !overlayDragStart || !activeSegment || !previewContainerRef.current) return;
+
+    const container = previewContainerRef.current;
+    const rect = container.getBoundingClientRect();
+
+    // Calculate movement as percentage of container size
+    const deltaX = ((e.clientX - overlayDragStart.x) / rect.width) * 100;
+    const deltaY = ((e.clientY - overlayDragStart.y) / rect.height) * 100;
+
+    const newX = Math.max(-50, Math.min(50, overlayDragStart.initialTransform.x + deltaX));
+    const newY = Math.max(-50, Math.min(50, overlayDragStart.initialTransform.y + deltaY));
+
+    onUpdateOverlayTransform(activeSegment.id, {
+      ...overlayDragStart.initialTransform,
+      x: Math.round(newX * 10) / 10,
+      y: Math.round(newY * 10) / 10
+    });
+  }, [isOverlayDragging, overlayDragStart, activeSegment, onUpdateOverlayTransform]);
+
+  const handleOverlayDragEnd = useCallback(() => {
+    setIsOverlayDragging(false);
+    setOverlayDragStart(null);
+  }, []);
+
+  useEffect(() => {
+    if (isOverlayDragging) {
+      window.addEventListener('mousemove', handleOverlayDragMove);
+      window.addEventListener('mouseup', handleOverlayDragEnd);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleOverlayDragMove);
+      window.removeEventListener('mouseup', handleOverlayDragEnd);
+    };
+  }, [isOverlayDragging, handleOverlayDragMove, handleOverlayDragEnd]);
+
   // Chroma key handlers
   const getActiveChromaSettings = (): ChromaKeySettings => {
     return activeSegment?.chromaKey || { ...DEFAULT_CHROMA_KEY_SETTINGS };
@@ -607,7 +661,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     const transform = activeSegment.overlayTransform || DEFAULT_OVERLAY_TRANSFORM;
                     const transformStyle = {
                       transform: `translate(${transform.x}%, ${transform.y}%) scale(${transform.scale})`,
-                      ...(activeSegment.chromaKey?.enabled ? {} : { mixBlendMode: 'screen' as const })
+                      ...(activeSegment.chromaKey?.enabled ? {} : { mixBlendMode: 'screen' as const }),
+                      cursor: isPickingColor ? 'crosshair' : (isOverlayDragging ? 'grabbing' : 'grab')
                     };
                     return (
                       <>
@@ -621,6 +676,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                           loop
                           playsInline
                           onClick={handlePreviewClick}
+                          onMouseDown={handleOverlayDragStart}
                           onTimeUpdate={activeSegment.chromaKey?.enabled ? updateChromaCanvas : undefined}
                         />
                         {/* Chroma keyed canvas overlay */}
@@ -628,8 +684,12 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                           <canvas
                             ref={chromaCanvasRef}
                             className="absolute inset-0 w-full h-full object-contain"
-                            style={{ transform: `translate(${transform.x}%, ${transform.y}%) scale(${transform.scale})` }}
+                            style={{
+                              transform: `translate(${transform.x}%, ${transform.y}%) scale(${transform.scale})`,
+                              cursor: isPickingColor ? 'crosshair' : (isOverlayDragging ? 'grabbing' : 'grab')
+                            }}
                             onClick={handlePreviewClick}
+                            onMouseDown={handleOverlayDragStart}
                           />
                         )}
                       </>
@@ -641,7 +701,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     const transform = activeSegment.overlayTransform || DEFAULT_OVERLAY_TRANSFORM;
                     const transformStyle = {
                       transform: `translate(${transform.x}%, ${transform.y}%) scale(${transform.scale})`,
-                      ...(activeSegment.chromaKey?.enabled ? {} : { mixBlendMode: 'screen' as const })
+                      ...(activeSegment.chromaKey?.enabled ? {} : { mixBlendMode: 'screen' as const }),
+                      cursor: isPickingColor ? 'crosshair' : (isOverlayDragging ? 'grabbing' : 'grab')
                     };
                     return (
                       <>
@@ -652,15 +713,21 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                           className={`absolute inset-0 w-full h-full object-contain ${activeSegment.chromaKey?.enabled ? 'hidden' : ''}`}
                           style={transformStyle}
                           onClick={handlePreviewClick}
+                          onMouseDown={handleOverlayDragStart}
                           onLoad={activeSegment.chromaKey?.enabled ? updateChromaCanvas : undefined}
+                          draggable={false}
                         />
                         {/* Chroma keyed canvas overlay */}
                         {activeSegment.chromaKey?.enabled && (
                           <canvas
                             ref={chromaCanvasRef}
                             className="absolute inset-0 w-full h-full object-contain"
-                            style={{ transform: `translate(${transform.x}%, ${transform.y}%) scale(${transform.scale})` }}
+                            style={{
+                              transform: `translate(${transform.x}%, ${transform.y}%) scale(${transform.scale})`,
+                              cursor: isPickingColor ? 'crosshair' : (isOverlayDragging ? 'grabbing' : 'grab')
+                            }}
                             onClick={handlePreviewClick}
+                            onMouseDown={handleOverlayDragStart}
                           />
                         )}
                       </>
@@ -672,6 +739,14 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-purple-500/90 text-white text-xs px-3 py-1.5 rounded-full flex items-center gap-2 z-20">
                       <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
                       Click on overlay to pick chroma key color
+                    </div>
+                  )}
+
+                  {/* Drag mode indicator */}
+                  {isOverlayDragging && (
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-blue-500/90 text-white text-xs px-3 py-1.5 rounded-full flex items-center gap-2 z-20">
+                      <Move className="w-3 h-3" />
+                      Drag to reposition overlay
                     </div>
                   )}
 
