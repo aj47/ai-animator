@@ -27,6 +27,8 @@ interface TimelineEditorProps {
   onUpdateChromaKey: (segmentId: string, settings: ChromaKeySettings) => void;
   hasKey: boolean;
   onConnectKey: () => void;
+  onGenerateSegmentImage?: (segment: Segment) => Promise<string | null>;
+  onGenerateSegmentVideo?: (segment: Segment) => Promise<string | null>;
 }
 
 interface LayerVisibility {
@@ -57,7 +59,9 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
   onUpdateSegmentTimestamp,
   onUpdateChromaKey,
   hasKey,
-  onConnectKey
+  onConnectKey,
+  onGenerateSegmentImage,
+  onGenerateSegmentVideo
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayVideoRef = useRef<HTMLVideoElement>(null);
@@ -920,6 +924,56 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                             <Plus className="w-3 h-3" />
                           </button>
                         </div>
+                      </div>
+
+                      {/* Generation Action Buttons */}
+                      <div className="flex items-center gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
+                        {/* Generate Image Button - show if no image yet and not generating */}
+                        {!segment.imageUrl && segment.status !== 'generating-image' && segment.status !== 'generating-video' && onGenerateSegmentImage && (
+                          <button
+                            onClick={() => onGenerateSegmentImage(segment)}
+                            disabled={pipelineState.isRunning}
+                            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md bg-green-600 hover:bg-green-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white text-xs font-medium transition-colors"
+                            title="Generate Image"
+                          >
+                            <Sparkles className="w-3 h-3" />
+                            Generate Image
+                          </button>
+                        )}
+
+                        {/* Generate Video Button - show if image exists but no video yet */}
+                        {segment.imageUrl && !segment.videoUrl && segment.status !== 'generating-video' && onGenerateSegmentVideo && (
+                          <button
+                            onClick={() => onGenerateSegmentVideo(segment)}
+                            disabled={pipelineState.isRunning}
+                            className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white text-xs font-medium transition-colors"
+                            title="Generate Video"
+                          >
+                            <Film className="w-3 h-3" />
+                            Animate
+                          </button>
+                        )}
+
+                        {/* Regenerate Video Button - show if video already exists */}
+                        {segment.videoUrl && segment.status !== 'generating-video' && onGenerateSegmentVideo && (
+                          <button
+                            onClick={() => onGenerateSegmentVideo(segment)}
+                            disabled={pipelineState.isRunning}
+                            className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-xs font-medium transition-colors border border-zinc-600"
+                            title="Regenerate Video"
+                          >
+                            <Video className="w-3 h-3" />
+                            Regen Video
+                          </button>
+                        )}
+
+                        {/* Show loading state when generating */}
+                        {(segment.status === 'generating-image' || segment.status === 'generating-video') && (
+                          <div className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md bg-zinc-800 text-zinc-400 text-xs">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            {segment.status === 'generating-image' ? 'Generating Image...' : 'Generating Video...'}
+                          </div>
+                        )}
                       </div>
 
                       {/* Segment Details - always shown */}

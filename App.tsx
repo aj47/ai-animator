@@ -527,6 +527,8 @@ const App: React.FC = () => {
         onUpdateChromaKey={handleUpdateChromaKey}
         hasKey={hasKey}
         onConnectKey={handleConnectKey}
+        onGenerateSegmentImage={handleGenerateSegmentImage}
+        onGenerateSegmentVideo={handleGenerateSegmentVideo}
       />
     );
   }
