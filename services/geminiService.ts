@@ -3,6 +3,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { ANALYSIS_MODEL, GENERATION_MODEL } from "../constants";
 import { AnalysisResult, Segment } from "../types";
 import { formatTime } from "../utils/videoUtils";
+import { logger } from "../utils/logger";
 
 // Helper to get fresh instance (handling key updates)
 const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -10,17 +11,22 @@ const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 export const checkApiKey = async (): Promise<boolean> => {
   // Check for env variable first (local development)
   if (process.env.API_KEY || process.env.GEMINI_API_KEY) {
+    logger.api.keyCheck(true);
     return true;
   }
   // Then check AI Studio environment
   const win = window as any;
   if (win.aistudio && win.aistudio.hasSelectedApiKey) {
-    return await win.aistudio.hasSelectedApiKey();
+    const hasKey = await win.aistudio.hasSelectedApiKey();
+    logger.api.keyCheck(hasKey);
+    return hasKey;
   }
+  logger.api.keyCheck(false);
   return false;
 };
 
 export const promptApiKey = async (): Promise<boolean> => {
+  logger.api.request('promptApiKey', {});
   // In local dev with env key, nothing to prompt
   if (process.env.API_KEY || process.env.GEMINI_API_KEY) {
     return true;
@@ -35,10 +41,12 @@ export const promptApiKey = async (): Promise<boolean> => {
 
 export const analyzeVideoContent = async (videoBase64: string, mimeType: string): Promise<AnalysisResult> => {
   const ai = getAI();
-  
+
+  logger.api.request('analyzeVideoContent', { mimeType, videoBase64Length: videoBase64.length });
+
   const prompt = `
     You are an expert video editor and educational content strategist.
-    
+
     TASK:
     Analyze the provided video to identify distinct "segments" or "topics" where the visual context or spoken subject changes significantly.
     For each segment, I need you to suggest a Green Screen Overlay Asset (AR Graphic) that would help explain that specific topic.
@@ -55,6 +63,8 @@ export const analyzeVideoContent = async (videoBase64: string, mimeType: string)
 
     Return a JSON object with a visual summary, audio summary, and the list of segments.
   `;
+
+  logger.prompt.analysis(prompt);
 
   const response = await ai.models.generateContent({
     model: ANALYSIS_MODEL,
@@ -92,11 +102,13 @@ export const analyzeVideoContent = async (videoBase64: string, mimeType: string)
     }
   });
 
+  logger.api.response('analyzeVideoContent', 'success');
+
   const text = response.text;
   if (!text) throw new Error("No response from Gemini");
-  
+
   const result = JSON.parse(text) as AnalysisResult;
-  
+
   // Post-process to add formatted time, default status, and default duration
   result.segments = result.segments.map(s => ({
     ...s,
@@ -104,6 +116,14 @@ export const analyzeVideoContent = async (videoBase64: string, mimeType: string)
     status: 'idle',
     duration: 5 // Default duration of 5 seconds
   }));
+
+  logger.prompt.analysisResult(result);
+
+  // Log each segment's prompts
+  result.segments.forEach(s => {
+    logger.prompt.imagePrompt(s.id, s.prompt);
+    logger.prompt.animationPrompt(s.id, s.animationPrompt);
+  });
 
   return result;
 };
@@ -116,10 +136,13 @@ export const generateSceneWithOverlay = async (
   promptText: string,
   imageBase64: string,
   aspectRatio: string,
-  onProgress?: (msg: string) => void
+  onProgress?: (msg: string) => void,
+  segmentId?: string
 ): Promise<string> => {
   const ai = getAI();
 
+  logger.imageGen.step1Start(segmentId || 'unknown');
+  logger.api.request('generateSceneWithOverlay', { promptLength: promptText.length, aspectRatio });
   if (onProgress) onProgress("Step 1: Recreating scene with overlay graphics...");
 
   const response = await ai.models.generateContent({
@@ -158,7 +181,13 @@ export const generateSceneWithOverlay = async (
     }
   }
 
-  if (!imageUrl) throw new Error("Scene recreation failed: No image returned.");
+  if (!imageUrl) {
+    logger.api.error('generateSceneWithOverlay', 'No image returned');
+    throw new Error("Scene recreation failed: No image returned.");
+  }
+
+  logger.imageGen.step1Complete(segmentId || 'unknown');
+  logger.api.response('generateSceneWithOverlay', 'success');
 
   return imageUrl;
 };
@@ -170,10 +199,13 @@ export const generateSceneWithOverlay = async (
 export const generateGreenScreenBackground = async (
   sceneImageBase64: string,
   aspectRatio: string,
-  onProgress?: (msg: string) => void
+  onProgress?: (msg: string) => void,
+  segmentId?: string
 ): Promise<string> => {
   const ai = getAI();
 
+  logger.imageGen.step2Start(segmentId || 'unknown');
+  logger.api.request('generateGreenScreenBackground', { aspectRatio });
   if (onProgress) onProgress("Step 2: Generating green screen background...");
 
   const response = await ai.models.generateContent({
@@ -212,7 +244,13 @@ export const generateGreenScreenBackground = async (
     }
   }
 
-  if (!imageUrl) throw new Error("Green screen generation failed: No image returned.");
+  if (!imageUrl) {
+    logger.api.error('generateGreenScreenBackground', 'No image returned');
+    throw new Error("Green screen generation failed: No image returned.");
+  }
+
+  logger.imageGen.step2Complete(segmentId || 'unknown');
+  logger.api.response('generateGreenScreenBackground', 'success');
 
   return imageUrl;
 };
@@ -226,14 +264,18 @@ export const generateImageAsset = async (
   promptText: string,
   imageBase64: string,
   aspectRatio: string,
-  onProgress?: (msg: string) => void
+  onProgress?: (msg: string) => void,
+  segmentId?: string
 ): Promise<string> => {
+  logger.imageGen.start(segmentId || 'unknown', promptText);
+
   // Step 1: Generate scene with overlays positioned correctly
   const sceneWithOverlay = await generateSceneWithOverlay(
     promptText,
     imageBase64,
     aspectRatio,
-    onProgress
+    onProgress,
+    segmentId
   );
 
   // Extract base64 from the data URL for step 2
@@ -243,8 +285,11 @@ export const generateImageAsset = async (
   const greenScreenResult = await generateGreenScreenBackground(
     sceneBase64,
     aspectRatio,
-    onProgress
+    onProgress,
+    segmentId
   );
+
+  logger.imageGen.success(segmentId || 'unknown', greenScreenResult.length);
 
   return greenScreenResult;
 };
@@ -253,9 +298,12 @@ export const generateVeoAnimation = async (
   promptText: string,
   imageBase64Data: string, // Pure base64 data without prefix
   mimeType: string,
-  inputAspectRatio: string
+  inputAspectRatio: string,
+  segmentId?: string
 ): Promise<string> => {
   const ai = getAI();
+
+  logger.videoGen.start(segmentId || 'unknown', promptText);
 
   // Veo only supports 16:9 (Landscape) or 9:16 (Portrait).
   // We map the input aspect ratio to the closest supported format.
@@ -264,9 +312,22 @@ export const generateVeoAnimation = async (
     veoAspectRatio = '9:16';
   }
 
+  const config = {
+    model: 'veo-3.1-fast-generate-preview',
+    numberOfVideos: 1,
+    resolution: '720p',
+    aspectRatio: veoAspectRatio,
+    inputAspectRatio,
+    mimeType,
+  };
+  logger.videoGen.config(config);
+
+  const fullPrompt = `${promptText}. Keep the background solid green (#00FF00) for chroma keying. Do NOT change the camera angle.`;
+  logger.api.request('generateVideos', { prompt: fullPrompt, config });
+
   let operation = await ai.models.generateVideos({
     model: 'veo-3.1-fast-generate-preview',
-    prompt: `${promptText}. Keep the background solid green (#00FF00) for chroma keying. Do NOT change the camera angle.`,
+    prompt: fullPrompt,
     image: {
       imageBytes: imageBase64Data,
       mimeType: mimeType
@@ -278,18 +339,34 @@ export const generateVeoAnimation = async (
     }
   });
 
+  let pollAttempt = 0;
   while (!operation.done) {
+    pollAttempt++;
+    logger.videoGen.polling(segmentId || 'unknown', pollAttempt);
     await new Promise(resolve => setTimeout(resolve, 5000)); // Poll every 5s
     operation = await ai.operations.getVideosOperation({ operation: operation });
   }
 
   const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri;
-  if (!videoUri) throw new Error("Video generation failed");
+  if (!videoUri) {
+    logger.videoGen.error(segmentId || 'unknown', 'No video URI returned');
+    throw new Error("Video generation failed");
+  }
+
+  logger.api.request('fetchVideo', { videoUri: videoUri.substring(0, 50) + '...' });
 
   // Fetch the actual video bytes using the API key
   const response = await fetch(`${videoUri}&key=${process.env.API_KEY}`);
-  if (!response.ok) throw new Error("Failed to download generated video");
-  
+  if (!response.ok) {
+    logger.videoGen.error(segmentId || 'unknown', `Failed to download: ${response.status}`);
+    throw new Error("Failed to download generated video");
+  }
+
   const blob = await response.blob();
-  return URL.createObjectURL(blob);
+  const objectUrl = URL.createObjectURL(blob);
+
+  logger.videoGen.success(segmentId || 'unknown', objectUrl);
+  logger.api.response('generateVideos', 'success');
+
+  return objectUrl;
 };
