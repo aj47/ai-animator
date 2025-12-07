@@ -1031,6 +1031,20 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                           </div>
                         )}
 
+                        {/* Chroma Key Controls - inline in segment */}
+                        {(segment.videoUrl || segment.imageUrl) && (
+                          <ChromaKeyControls
+                            settings={segment.chromaKey || DEFAULT_CHROMA_KEY_SETTINGS}
+                            onChange={(settings) => onUpdateChromaKey(segment.id, settings)}
+                            onPickColor={() => {
+                              jumpToSegment(segment);
+                              setIsPickingColor(true);
+                            }}
+                            isPickingColor={isPickingColor && activeSegment?.id === segment.id}
+                            compact={true}
+                          />
+                        )}
+
                         {/* Prompt */}
                         {segment.prompt && (
                           <div className="bg-zinc-800/50 rounded-lg p-2">
