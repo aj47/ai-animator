@@ -2,14 +2,16 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   Play, Pause, SkipBack, SkipForward, Volume2, VolumeX,
-  Layers, Film, Sparkles, Eye, EyeOff, Upload,
+  Layers, Film, Sparkles, Eye, EyeOff, Upload, Sliders,
   Diamond, Maximize2, ZoomIn, ZoomOut, Clock, GripVertical, GripHorizontal,
   Plus, Minus, Loader2, StopCircle, CheckCircle2, Image, Video
 } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { AnalysisResult, Segment, GenerationPipelineState } from '../types';
+import { AnalysisResult, Segment, GenerationPipelineState, ChromaKeySettings, DEFAULT_CHROMA_KEY_SETTINGS } from '../types';
 import { formatTime } from '../utils/videoUtils';
 import { MAX_VIDEO_SIZE_MB } from '../constants';
+import ChromaKeyControls from './ChromaKeyControls';
+import { createChromaKeyCanvas, sampleColorFromImage } from '../utils/chromaKey';
 
 interface TimelineEditorProps {
   videoUrl: string | null;
@@ -22,6 +24,7 @@ interface TimelineEditorProps {
   onViewSegment: (segment: Segment) => void;
   onUpdateSegmentDuration: (segmentId: string, newDuration: number) => void;
   onUpdateSegmentTimestamp: (segmentId: string, newTimestamp: number) => void;
+  onUpdateChromaKey: (segmentId: string, settings: ChromaKeySettings) => void;
   hasKey: boolean;
   onConnectKey: () => void;
 }
@@ -52,11 +55,14 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
   onViewSegment,
   onUpdateSegmentDuration,
   onUpdateSegmentTimestamp,
+  onUpdateChromaKey,
   hasKey,
   onConnectKey
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayVideoRef = useRef<HTMLVideoElement>(null);
+  const overlayImageRef = useRef<HTMLImageElement>(null);
+  const chromaCanvasRef = useRef<HTMLCanvasElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const animationTrackRef = useRef<HTMLDivElement>(null);
   const previewContainerRef = useRef<HTMLDivElement>(null);
@@ -75,6 +81,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
   const [segmentDrag, setSegmentDrag] = useState<SegmentDragState | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
+
+  // Chroma key state
+  const [isPickingColor, setIsPickingColor] = useState(false);
+  const [showChromaPanel, setShowChromaPanel] = useState(false);
 
   // File picker handlers
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -181,6 +191,11 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
       overlayVideoRef.current?.pause();
     };
 
+    // Check if video already has metadata loaded (handles case where loadedmetadata fired before this effect)
+    if (video.readyState >= 1 && video.duration) {
+      setDuration(video.duration);
+    }
+
     video.addEventListener('timeupdate', handleTimeUpdate);
     video.addEventListener('loadedmetadata', handleLoadedMetadata);
     video.addEventListener('play', handlePlay);
@@ -192,7 +207,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
       video.removeEventListener('play', handlePlay);
       video.removeEventListener('pause', handlePause);
     };
-  }, [findActiveSegment, isPlaying]);
+  }, [findActiveSegment, isPlaying, videoUrl]);
 
   // Playback controls
   const togglePlay = () => {
@@ -335,6 +350,58 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
   const getSegmentPosition = (timestamp: number) => {
     return duration > 0 ? (timestamp / duration) * 100 : 0;
   };
+
+  // Chroma key handlers
+  const getActiveChromaSettings = (): ChromaKeySettings => {
+    return activeSegment?.chromaKey || { ...DEFAULT_CHROMA_KEY_SETTINGS };
+  };
+
+  const handleChromaSettingsChange = (settings: ChromaKeySettings) => {
+    if (activeSegment) {
+      onUpdateChromaKey(activeSegment.id, settings);
+    }
+  };
+
+  const handlePickColorClick = () => {
+    setIsPickingColor(!isPickingColor);
+  };
+
+  const handlePreviewClick = (e: React.MouseEvent<HTMLImageElement | HTMLVideoElement | HTMLCanvasElement>) => {
+    if (!isPickingColor || !activeSegment) return;
+
+    const target = e.currentTarget;
+    const rect = target.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const color = sampleColorFromImage(target as HTMLImageElement | HTMLVideoElement | HTMLCanvasElement, x, y);
+    const newSettings = { ...getActiveChromaSettings(), keyColor: color };
+    onUpdateChromaKey(activeSegment.id, newSettings);
+    setIsPickingColor(false);
+  };
+
+  // Update chroma canvas when active segment changes or settings change
+  const updateChromaCanvas = useCallback(() => {
+    if (!chromaCanvasRef.current || !activeSegment) return;
+
+    const settings = activeSegment.chromaKey || DEFAULT_CHROMA_KEY_SETTINGS;
+    if (!settings.enabled) return;
+
+    const source = activeSegment.videoUrl
+      ? overlayVideoRef.current
+      : overlayImageRef.current;
+
+    if (!source) return;
+
+    const canvas = createChromaKeyCanvas(source as HTMLImageElement | HTMLVideoElement, settings);
+    const ctx = chromaCanvasRef.current.getContext('2d');
+    if (ctx) {
+      chromaCanvasRef.current.width = canvas.width;
+      chromaCanvasRef.current.height = canvas.height;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(canvas, 0, 0);
+    }
+  }, [activeSegment]);
 
   // Empty state - no video loaded
   if (!videoUrl) {
@@ -489,7 +556,10 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
             <Panel defaultSize={75} minSize={40}>
               <div className="h-full flex flex-col p-4 gap-4">
                 {/* Video Preview with Composite */}
-                <div ref={previewContainerRef} className="flex-1 relative bg-black rounded-xl overflow-hidden border border-zinc-800">
+                <div
+                  ref={previewContainerRef}
+                  className={`flex-1 relative bg-black rounded-xl overflow-hidden border ${isPickingColor ? 'border-purple-500 ring-2 ring-purple-500/30' : 'border-zinc-800'} ${isPickingColor ? 'cursor-crosshair' : ''}`}
+                >
                   {/* Base Video Layer */}
                   <video
                     ref={videoRef}
@@ -498,29 +568,65 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     playsInline
                   />
 
-                  {/* Animation Overlay Layer */}
+                  {/* Animation Overlay Layer - with chroma key support */}
                   {activeSegment?.videoUrl && layerVisibility.animation && (
-                    <video
-                      ref={overlayVideoRef}
-                      src={activeSegment.videoUrl}
-                      className="absolute inset-0 w-full h-full object-contain mix-blend-screen"
-                      muted
-                      loop
-                      playsInline
-                    />
+                    <>
+                      {/* Hidden video for chroma key processing */}
+                      <video
+                        ref={overlayVideoRef}
+                        src={activeSegment.videoUrl}
+                        className={`absolute inset-0 w-full h-full object-contain ${activeSegment.chromaKey?.enabled ? 'hidden' : ''}`}
+                        style={!activeSegment.chromaKey?.enabled ? { mixBlendMode: 'screen' } : {}}
+                        muted
+                        loop
+                        playsInline
+                        onClick={handlePreviewClick}
+                        onTimeUpdate={activeSegment.chromaKey?.enabled ? updateChromaCanvas : undefined}
+                      />
+                      {/* Chroma keyed canvas overlay */}
+                      {activeSegment.chromaKey?.enabled && (
+                        <canvas
+                          ref={chromaCanvasRef}
+                          className="absolute inset-0 w-full h-full object-contain"
+                          onClick={handlePreviewClick}
+                        />
+                      )}
+                    </>
                   )}
 
-                  {/* Static Image Overlay (when no video) */}
+                  {/* Static Image Overlay (when no video) - with chroma key support */}
                   {activeSegment?.imageUrl && !activeSegment.videoUrl && layerVisibility.animation && (
-                    <img
-                      src={activeSegment.imageUrl}
-                      alt="Overlay"
-                      className="absolute inset-0 w-full h-full object-contain mix-blend-screen"
-                    />
+                    <>
+                      <img
+                        ref={overlayImageRef}
+                        src={activeSegment.imageUrl}
+                        alt="Overlay"
+                        className={`absolute inset-0 w-full h-full object-contain ${activeSegment.chromaKey?.enabled ? 'hidden' : ''}`}
+                        style={!activeSegment.chromaKey?.enabled ? { mixBlendMode: 'screen' } : {}}
+                        onClick={handlePreviewClick}
+                        onLoad={activeSegment.chromaKey?.enabled ? updateChromaCanvas : undefined}
+                      />
+                      {/* Chroma keyed canvas overlay */}
+                      {activeSegment.chromaKey?.enabled && (
+                        <canvas
+                          ref={chromaCanvasRef}
+                          className="absolute inset-0 w-full h-full object-contain"
+                          onClick={handlePreviewClick}
+                        />
+                      )}
+                    </>
+                  )}
+
+                  {/* Eyedropper mode indicator */}
+                  {isPickingColor && (
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-purple-500/90 text-white text-xs px-3 py-1.5 rounded-full flex items-center gap-2 z-20">
+                      <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                      Click on overlay to pick chroma key color
+                    </div>
                   )}
 
                   {/* Overlay Info Badge */}
-                  {activeSegment && (
+                  {activeSegment && !isPickingColor && (
                     <div className="absolute top-4 left-4 bg-black/70 backdrop-blur-sm rounded-lg px-3 py-2 border border-green-500/30">
                       <div className="flex items-center gap-2">
                         <Sparkles className="w-3 h-3 text-green-400" />
@@ -536,7 +642,35 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                   >
                     <Maximize2 className="w-4 h-4" />
                   </button>
+
+                  {/* Chroma Key Toggle Button */}
+                  {activeSegment && (activeSegment.imageUrl || activeSegment.videoUrl) && (
+                    <button
+                      onClick={() => setShowChromaPanel(!showChromaPanel)}
+                      className={`absolute bottom-4 right-4 p-2 rounded-lg transition-colors ${
+                        showChromaPanel
+                          ? 'bg-green-500/30 text-green-400 border border-green-500/50'
+                          : 'bg-black/50 hover:bg-black/70 text-zinc-400 hover:text-white'
+                      }`}
+                      title="Chroma Key Settings"
+                    >
+                      <Sliders className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
+
+                {/* Chroma Key Controls Panel - Collapsible */}
+                {showChromaPanel && activeSegment && (activeSegment.imageUrl || activeSegment.videoUrl) && (
+                  <div className="shrink-0">
+                    <ChromaKeyControls
+                      settings={getActiveChromaSettings()}
+                      onChange={handleChromaSettingsChange}
+                      onPickColor={handlePickColorClick}
+                      isPickingColor={isPickingColor}
+                      compact={false}
+                    />
+                  </div>
+                )}
 
                 {/* Playback Controls */}
                 <div className="flex items-center justify-center gap-4 py-2">

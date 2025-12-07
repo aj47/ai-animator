@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AppState, AnalysisResult, Segment, GenerationPipelineState } from './types';
+import { AppState, AnalysisResult, Segment, GenerationPipelineState, ChromaKeySettings } from './types';
 import PromptSelector from './components/PromptSelector';
 import VeoGenerator from './components/VeoGenerator';
 import TimelineEditor from './components/TimelineEditor';
@@ -422,6 +422,20 @@ const App: React.FC = () => {
     });
   };
 
+  const handleUpdateChromaKey = (segmentId: string, settings: ChromaKeySettings) => {
+    setAnalysis(prev => prev ? ({
+      ...prev,
+      segments: prev.segments.map(s =>
+        s.id === segmentId ? { ...s, chromaKey: settings } : s
+      )
+    }) : null);
+
+    // Also update active segment if viewing it
+    if (activeSegment && activeSegment.id === segmentId) {
+      setActiveSegment(prev => prev ? ({ ...prev, chromaKey: settings }) : null);
+    }
+  };
+
   const handleReset = () => {
     if (videoUrl) URL.revokeObjectURL(videoUrl);
     setVideoUrl(null);
@@ -456,6 +470,7 @@ const App: React.FC = () => {
         onViewSegment={handleViewSegment}
         onUpdateSegmentDuration={handleUpdateSegmentDuration}
         onUpdateSegmentTimestamp={handleUpdateSegmentTimestamp}
+        onUpdateChromaKey={handleUpdateChromaKey}
         hasKey={hasKey}
         onConnectKey={handleConnectKey}
       />
@@ -529,6 +544,7 @@ const App: React.FC = () => {
                 onRegenerateImage={handleRegenerateImage}
                 onUpdateSegmentPrompts={handleUpdateSegmentPrompts}
                 onGenerateImage={handleGenerateSegmentImage}
+                onUpdateChromaKey={handleUpdateChromaKey}
              />
         )}
 

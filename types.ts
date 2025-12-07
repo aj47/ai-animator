@@ -1,4 +1,21 @@
 
+// Chroma key settings for removing green screen backgrounds
+export interface ChromaKeySettings {
+  enabled: boolean;
+  keyColor: string; // Hex color, e.g., "#00FF00"
+  tolerance: number; // 0-100, how much color variance to key out
+  spillSuppression: number; // 0-100, reduce color spill on edges
+  edgeSoftness: number; // 0-100, feather/blur the edges
+}
+
+export const DEFAULT_CHROMA_KEY_SETTINGS: ChromaKeySettings = {
+  enabled: true,
+  keyColor: '#00FF00',
+  tolerance: 40,
+  spillSuppression: 50,
+  edgeSoftness: 10
+};
+
 export interface Segment {
   id: string;
   timestamp: number; // Seconds
@@ -12,6 +29,7 @@ export interface Segment {
   videoUrl?: string;
   error?: string;
   duration: number; // Duration of the segment in seconds (default: 5)
+  chromaKey?: ChromaKeySettings; // Per-segment chroma key settings
 }
 
 export interface AnalysisResult {

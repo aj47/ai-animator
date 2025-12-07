@@ -1,7 +1,9 @@
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Download, ArrowLeft, Play, Move, Film, Loader2, RefreshCw, Pencil, Check, X, Sparkles } from 'lucide-react';
-import { Segment } from '../types';
+import { Segment, ChromaKeySettings, DEFAULT_CHROMA_KEY_SETTINGS } from '../types';
+import ChromaKeyControls from './ChromaKeyControls';
+import { sampleColorFromImage, createChromaKeyCanvas } from '../utils/chromaKey';
 
 interface VeoGeneratorProps {
   segment: Segment;
@@ -11,15 +13,26 @@ interface VeoGeneratorProps {
   onRegenerateImage: (segment: Segment) => void;
   onUpdateSegmentPrompts: (segmentId: string, prompt: string, animationPrompt: string) => void;
   onGenerateImage: (segment: Segment) => void;
+  onUpdateChromaKey?: (segmentId: string, settings: ChromaKeySettings) => void;
 }
 
-const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, onBack, onAnimate, onRegenerateImage, onUpdateSegmentPrompts, onGenerateImage }) => {
+const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, onBack, onAnimate, onRegenerateImage, onUpdateSegmentPrompts, onGenerateImage, onUpdateChromaKey }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const overlayImageRef = useRef<HTMLImageElement>(null);
+  const overlayVideoRef = useRef<HTMLVideoElement>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Edit mode state
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [editedPrompt, setEditedPrompt] = useState(segment.prompt);
   const [editedAnimationPrompt, setEditedAnimationPrompt] = useState(segment.animationPrompt);
+
+  // Chroma key state
+  const [chromaSettings, setChromaSettings] = useState<ChromaKeySettings>(
+    segment.chromaKey || { ...DEFAULT_CHROMA_KEY_SETTINGS }
+  );
+  const [isPickingColor, setIsPickingColor] = useState(false);
+  const [showChromaPreview, setShowChromaPreview] = useState(false);
 
   // Auto-seek to the timestamp when mounted
   useEffect(() => {
@@ -33,6 +46,65 @@ const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, 
     setEditedPrompt(segment.prompt);
     setEditedAnimationPrompt(segment.animationPrompt);
   }, [segment.prompt, segment.animationPrompt]);
+
+  // Sync chroma settings when segment changes
+  useEffect(() => {
+    if (segment.chromaKey) {
+      setChromaSettings(segment.chromaKey);
+    }
+  }, [segment.chromaKey]);
+
+  // Update chroma key preview when settings change
+  const updateChromaPreview = useCallback(() => {
+    if (!previewCanvasRef.current) return;
+
+    const source = segment.videoUrl
+      ? overlayVideoRef.current
+      : overlayImageRef.current;
+
+    if (!source) return;
+
+    const canvas = createChromaKeyCanvas(source as HTMLImageElement | HTMLVideoElement, chromaSettings);
+    const ctx = previewCanvasRef.current.getContext('2d');
+    if (ctx) {
+      previewCanvasRef.current.width = canvas.width;
+      previewCanvasRef.current.height = canvas.height;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(canvas, 0, 0);
+    }
+  }, [chromaSettings, segment.videoUrl]);
+
+  useEffect(() => {
+    if (showChromaPreview) {
+      updateChromaPreview();
+    }
+  }, [showChromaPreview, chromaSettings, updateChromaPreview]);
+
+  // Handle chroma key settings change
+  const handleChromaSettingsChange = (newSettings: ChromaKeySettings) => {
+    setChromaSettings(newSettings);
+    if (onUpdateChromaKey) {
+      onUpdateChromaKey(segment.id, newSettings);
+    }
+  };
+
+  // Handle eyedropper color picking
+  const handlePickColorClick = () => {
+    setIsPickingColor(!isPickingColor);
+  };
+
+  const handleImageClick = (e: React.MouseEvent<HTMLImageElement | HTMLVideoElement | HTMLCanvasElement>) => {
+    if (!isPickingColor) return;
+
+    const target = e.currentTarget;
+    const rect = target.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const color = sampleColorFromImage(target as HTMLImageElement | HTMLVideoElement | HTMLCanvasElement, x, y);
+    handleChromaSettingsChange({ ...chromaSettings, keyColor: color });
+    setIsPickingColor(false);
+  };
 
   const handleReplay = () => {
     if (videoRef.current) {
@@ -114,27 +186,75 @@ const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, 
 
               {/* Generated Result (Image or Video) OR Placeholder */}
               <div className="flex flex-col gap-2 flex-1 w-full max-w-lg">
-                   <span className="text-xs font-bold text-green-500 uppercase tracking-widest text-center lg:text-left">
-                       {segment.videoUrl ? 'Green Screen Animation' : segment.imageUrl ? 'Green Screen Overlay' : 'Preview Area'}
-                   </span>
+                   <div className="flex items-center justify-between">
+                     <span className="text-xs font-bold text-green-500 uppercase tracking-widest">
+                         {segment.videoUrl ? 'Green Screen Animation' : segment.imageUrl ? 'Green Screen Overlay' : 'Preview Area'}
+                     </span>
+                     {(segment.imageUrl || segment.videoUrl) && (
+                       <button
+                         onClick={() => setShowChromaPreview(!showChromaPreview)}
+                         className={`text-xs px-2 py-1 rounded-full transition-colors ${
+                           showChromaPreview
+                             ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                             : 'bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-700'
+                         }`}
+                       >
+                         {showChromaPreview ? 'Show Original' : 'Preview Key'}
+                       </button>
+                     )}
+                   </div>
 
-                  <div className="relative aspect-video bg-black rounded-xl overflow-hidden shadow-2xl shadow-green-900/20 border border-zinc-700">
+                  <div className={`relative aspect-video bg-black rounded-xl overflow-hidden shadow-2xl shadow-green-900/20 border ${isPickingColor ? 'border-purple-500 ring-2 ring-purple-500/30' : 'border-zinc-700'} ${isPickingColor ? 'cursor-crosshair' : ''}`}>
+                      {/* Checkerboard pattern for transparency preview */}
+                      {showChromaPreview && (
+                        <div
+                          className="absolute inset-0"
+                          style={{
+                            backgroundImage: 'linear-gradient(45deg, #333 25%, transparent 25%), linear-gradient(-45deg, #333 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #333 75%), linear-gradient(-45deg, transparent 75%, #333 75%)',
+                            backgroundSize: '20px 20px',
+                            backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px'
+                          }}
+                        />
+                      )}
+
                       {segment.videoUrl ? (
+                        showChromaPreview ? (
+                          <canvas
+                            ref={previewCanvasRef}
+                            className="absolute inset-0 w-full h-full object-contain"
+                            onClick={handleImageClick}
+                          />
+                        ) : (
                           <video
+                            ref={overlayVideoRef}
                             src={segment.videoUrl}
                             className="w-full h-full object-contain"
                             autoPlay
                             loop
                             muted
                             playsInline
-                            controls
+                            controls={!isPickingColor}
+                            onClick={handleImageClick}
+                            onTimeUpdate={() => showChromaPreview && updateChromaPreview()}
                           />
+                        )
                       ) : segment.imageUrl ? (
-                          <img
-                              src={segment.imageUrl}
-                              alt="Generated Green Screen Asset"
-                              className="w-full h-full object-contain"
+                        showChromaPreview ? (
+                          <canvas
+                            ref={previewCanvasRef}
+                            className="absolute inset-0 w-full h-full object-contain"
+                            onClick={handleImageClick}
                           />
+                        ) : (
+                          <img
+                            ref={overlayImageRef}
+                            src={segment.imageUrl}
+                            alt="Generated Green Screen Asset"
+                            className="w-full h-full object-contain"
+                            onClick={handleImageClick}
+                            onLoad={() => showChromaPreview && updateChromaPreview()}
+                          />
+                        )
                       ) : (
                           <div className="w-full h-full flex flex-col items-center justify-center text-zinc-500">
                             {isGenerating ? (
@@ -151,7 +271,25 @@ const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, 
                             )}
                           </div>
                       )}
+
+                      {/* Eyedropper mode indicator */}
+                      {isPickingColor && (
+                        <div className="absolute top-2 left-2 bg-purple-500/90 text-white text-xs px-2 py-1 rounded-full flex items-center gap-1">
+                          <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                          Click to pick color
+                        </div>
+                      )}
                   </div>
+
+                  {/* Chroma Key Controls - show when image/video exists */}
+                  {(segment.imageUrl || segment.videoUrl) && (
+                    <ChromaKeyControls
+                      settings={chromaSettings}
+                      onChange={handleChromaSettingsChange}
+                      onPickColor={handlePickColorClick}
+                      isPickingColor={isPickingColor}
+                    />
+                  )}
 
                   {/* Prompts Section - Editable */}
                   <div className="mt-4 space-y-3">
