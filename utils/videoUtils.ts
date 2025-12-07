@@ -16,16 +16,30 @@ export const fileToBase64 = (file: File): Promise<string> => {
 export const extractFrameFromVideo = (videoUrl: string, time = 0): Promise<{ base64: string; width: number; height: number }> => {
   return new Promise((resolve, reject) => {
     const video = document.createElement('video');
-    video.src = videoUrl;
-    video.crossOrigin = "anonymous";
     video.muted = true;
-    
+    video.playsInline = true;
+
+    // Only set crossOrigin for non-blob URLs
+    if (!videoUrl.startsWith('blob:')) {
+      video.crossOrigin = "anonymous";
+    }
+
+    // Add timeout to prevent hanging forever
+    const timeout = setTimeout(() => {
+      console.error('[extractFrameFromVideo] Timeout waiting for video seek at time:', time);
+      video.src = "";
+      reject(new Error(`Timeout extracting frame at ${time}s`));
+    }, 15000);
+
     video.onloadedmetadata = () => {
+      console.log('[extractFrameFromVideo] Metadata loaded, duration:', video.duration, 'seeking to:', time);
       // Ensure we don't seek past the end
       video.currentTime = Math.min(time, video.duration);
     };
 
     video.onseeked = () => {
+      clearTimeout(timeout);
+      console.log('[extractFrameFromVideo] Seeked to:', video.currentTime);
       try {
         const canvas = document.createElement('canvas');
         canvas.width = video.videoWidth;
@@ -35,15 +49,16 @@ export const extractFrameFromVideo = (videoUrl: string, time = 0): Promise<{ bas
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
           const dataUrl = canvas.toDataURL('image/png');
           const base64 = dataUrl.split(',')[1];
-          resolve({ 
-            base64, 
-            width: video.videoWidth, 
-            height: video.videoHeight 
+          resolve({
+            base64,
+            width: video.videoWidth,
+            height: video.videoHeight
           });
         } else {
           reject(new Error("Could not get canvas context"));
         }
       } catch (e) {
+        console.error('[extractFrameFromVideo] Error drawing frame:', e);
         reject(e);
       } finally {
         // Clean up
@@ -52,7 +67,14 @@ export const extractFrameFromVideo = (videoUrl: string, time = 0): Promise<{ bas
       }
     };
 
-    video.onerror = (e) => reject(new Error("Error loading video for frame extraction"));
+    video.onerror = (e) => {
+      clearTimeout(timeout);
+      console.error('[extractFrameFromVideo] Video error:', e);
+      reject(new Error("Error loading video for frame extraction"));
+    };
+
+    // Set src after all handlers are attached
+    video.src = videoUrl;
   });
 };
 
