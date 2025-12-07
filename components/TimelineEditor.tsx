@@ -88,7 +88,6 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
   // Chroma key state
   const [isPickingColor, setIsPickingColor] = useState(false);
-  const [showChromaPanel, setShowChromaPanel] = useState(true); // Auto-show by default
 
   // File picker handlers
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -380,16 +379,6 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
   // Chroma key handlers
   const getActiveChromaSettings = (): ChromaKeySettings => {
     return activeSegment?.chromaKey || { ...DEFAULT_CHROMA_KEY_SETTINGS };
-  };
-
-  const handleChromaSettingsChange = (settings: ChromaKeySettings) => {
-    if (activeSegment) {
-      onUpdateChromaKey(activeSegment.id, settings);
-    }
-  };
-
-  const handlePickColorClick = () => {
-    setIsPickingColor(!isPickingColor);
   };
 
   const handlePreviewClick = (e: React.MouseEvent<HTMLImageElement | HTMLVideoElement | HTMLCanvasElement>) => {
@@ -785,34 +774,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     </div>
                   </div>
 
-                  {/* Chroma Key Toggle Button */}
-                  {activeSegment && (activeSegment.imageUrl || activeSegment.videoUrl) && (
-                    <button
-                      onClick={() => setShowChromaPanel(!showChromaPanel)}
-                      className={`absolute bottom-4 right-4 p-2 rounded-lg transition-colors ${
-                        showChromaPanel
-                          ? 'bg-green-500/30 text-green-400 border border-green-500/50'
-                          : 'bg-black/50 hover:bg-black/70 text-zinc-400 hover:text-white'
-                      }`}
-                      title="Chroma Key Settings"
-                    >
-                      <Sliders className="w-4 h-4" />
-                    </button>
-                  )}
                 </div>
-
-                {/* Chroma Key Controls Panel - Collapsible */}
-                {showChromaPanel && activeSegment && (activeSegment.imageUrl || activeSegment.videoUrl) && (
-                  <div className="shrink-0">
-                    <ChromaKeyControls
-                      settings={getActiveChromaSettings()}
-                      onChange={handleChromaSettingsChange}
-                      onPickColor={handlePickColorClick}
-                      isPickingColor={isPickingColor}
-                      compact={false}
-                    />
-                  </div>
-                )}
 
                 {/* Playback Controls */}
                 <div className="flex items-center justify-center gap-4 py-2">
