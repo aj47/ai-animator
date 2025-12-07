@@ -21,7 +21,6 @@ interface TimelineEditorProps {
   statusMessage: string;
   pipelineState: GenerationPipelineState;
   onStopGeneration: () => void;
-  onViewSegment: (segment: Segment) => void;
   onUpdateSegmentDuration: (segmentId: string, newDuration: number) => void;
   onUpdateSegmentTimestamp: (segmentId: string, newTimestamp: number) => void;
   onUpdateChromaKey: (segmentId: string, settings: ChromaKeySettings) => void;
@@ -52,7 +51,6 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
   statusMessage,
   pipelineState,
   onStopGeneration,
-  onViewSegment,
   onUpdateSegmentDuration,
   onUpdateSegmentTimestamp,
   onUpdateChromaKey,
@@ -547,11 +545,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
         </div>
       </div>
 
-      {/* Main Content - Vertical PanelGroup for main area and timeline */}
-      <PanelGroup direction="vertical" className="flex-1" autoSaveId="timeline-editor-vertical">
-        {/* Top Section: Preview + Sidebar */}
-        <Panel defaultSize={70} minSize={40}>
-          <PanelGroup direction="horizontal" className="h-full" autoSaveId="timeline-editor-horizontal">
+      {/* Main Content - Horizontal PanelGroup for preview + sidebar */}
+      <PanelGroup direction="horizontal" className="flex-1" autoSaveId="timeline-editor-horizontal">
             {/* Preview Panel */}
             <Panel defaultSize={75} minSize={40}>
               <div className="h-full flex flex-col p-4 gap-4">
@@ -635,13 +630,119 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     </div>
                   )}
 
-                  {/* Fullscreen button */}
-                  <button
-                    onClick={() => previewContainerRef.current?.requestFullscreen()}
-                    className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 rounded-lg text-zinc-400 hover:text-white"
-                  >
-                    <Maximize2 className="w-4 h-4" />
-                  </button>
+                  {/* Top right controls */}
+                  <div className="absolute top-4 right-4 flex items-center gap-2">
+                    {/* Layer visibility toggles */}
+                    <div className="flex items-center gap-1 bg-black/50 backdrop-blur-sm rounded-lg p-1">
+                      <button
+                        onClick={() => toggleLayerVisibility('video')}
+                        className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] transition-colors ${
+                          layerVisibility.video ? 'bg-blue-500/30 text-blue-400' : 'text-zinc-500 hover:text-zinc-300'
+                        }`}
+                        title="Toggle Video Layer"
+                      >
+                        {layerVisibility.video ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                        Video
+                      </button>
+                      <button
+                        onClick={() => toggleLayerVisibility('animation')}
+                        className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] transition-colors ${
+                          layerVisibility.animation ? 'bg-green-500/30 text-green-400' : 'text-zinc-500 hover:text-zinc-300'
+                        }`}
+                        title="Toggle Animation Layer"
+                      >
+                        {layerVisibility.animation ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                        Overlay
+                      </button>
+                    </div>
+                    {/* Fullscreen button */}
+                    <button
+                      onClick={() => previewContainerRef.current?.requestFullscreen()}
+                      className="p-2 bg-black/50 hover:bg-black/70 rounded-lg text-zinc-400 hover:text-white"
+                    >
+                      <Maximize2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Timeline Overlay at bottom of video */}
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/70 to-transparent pt-8 pb-2 px-3">
+                    {/* Animation Track with Segments */}
+                    <div
+                      ref={animationTrackRef}
+                      className="h-8 bg-zinc-800/50 rounded border border-zinc-700/50 relative overflow-visible mb-2"
+                    >
+                      {/* Segment clips on animation track */}
+                      {analysis?.segments.map((segment) => {
+                        const isVideoComplete = segment.status === 'video-success';
+                        const isImageComplete = segment.status === 'image-success';
+                        const left = getSegmentPosition(segment.timestamp);
+                        const segmentDuration = segment.duration || 5;
+                        const width = duration > 0 ? (segmentDuration / duration) * 100 : 5;
+                        const isDraggingThis = segmentDrag?.segmentId === segment.id;
+
+                        const getStatusClass = () => {
+                          if (isVideoComplete) return 'bg-gradient-to-r from-green-600/80 to-green-500/60 border border-green-400/50 hover:border-green-400';
+                          if (segment.status === 'generating-video') return 'bg-gradient-to-r from-purple-600/60 to-purple-500/40 border border-purple-400/50 animate-pulse';
+                          if (isImageComplete) return 'bg-gradient-to-r from-blue-600/60 to-blue-500/40 border border-blue-400/50';
+                          if (segment.status === 'generating-image') return 'bg-gradient-to-r from-blue-600/40 to-blue-500/20 border border-blue-400/30 animate-pulse';
+                          return 'bg-zinc-700/50 border border-zinc-600/50 border-dashed';
+                        };
+
+                        return (
+                          <div
+                            key={segment.id}
+                            className={`
+                              absolute top-0.5 bottom-0.5 rounded cursor-grab select-none
+                              ${getStatusClass()}
+                              ${activeSegment?.id === segment.id ? 'ring-2 ring-white/50' : ''}
+                              ${isDraggingThis ? 'ring-2 ring-purple-500 cursor-grabbing z-20' : 'z-10'}
+                            `}
+                            style={{ left: `${left}%`, width: `${Math.max(width, 2)}%` }}
+                            title={`${segment.topic} (${segmentDuration}s)`}
+                            onMouseDown={(e) => handleSegmentDragStart(e, segment, 'move')}
+                            onClick={(e) => { e.stopPropagation(); jumpToSegment(segment); }}
+                          >
+                            <div
+                              className="absolute left-0 top-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-purple-500/50 rounded-l transition-colors"
+                              onMouseDown={(e) => handleSegmentDragStart(e, segment, 'resize-start')}
+                            />
+                            <div className="px-1.5 py-0.5 overflow-hidden pointer-events-none">
+                              <span className="text-[8px] text-white font-medium truncate block">{segment.topic}</span>
+                            </div>
+                            <div
+                              className="absolute right-0 top-0 bottom-0 w-1.5 cursor-ew-resize hover:bg-purple-500/50 rounded-r transition-colors"
+                              onMouseDown={(e) => handleSegmentDragStart(e, segment, 'resize-end')}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Scrub Bar / Playhead */}
+                    <div
+                      ref={timelineRef}
+                      className="relative h-6 bg-zinc-800/50 rounded cursor-pointer group"
+                      onClick={handleTimelineClick}
+                      onMouseDown={() => setIsDragging(true)}
+                    >
+                      {/* Progress fill */}
+                      <div
+                        className="absolute top-0 left-0 bottom-0 bg-gradient-to-r from-purple-600/50 to-pink-600/30 rounded-l"
+                        style={{ width: `${(currentTime / duration) * 100}%` }}
+                      />
+                      {/* Playhead */}
+                      <div
+                        className="absolute top-0 bottom-0 w-0.5 bg-white shadow-lg shadow-white/50 z-20 pointer-events-none"
+                        style={{ left: `${(currentTime / duration) * 100}%` }}
+                      >
+                        <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white rounded-full" />
+                      </div>
+                      {/* Time display */}
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <span className="text-[10px] text-white/60 font-mono">{formatTime(currentTime)} / {formatTime(duration)}</span>
+                      </div>
+                    </div>
+                  </div>
 
                   {/* Chroma Key Toggle Button */}
                   {activeSegment && (activeSegment.imageUrl || activeSegment.videoUrl) && (
@@ -751,8 +852,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
                 <div className="p-3 border-b border-zinc-800">
                   <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
-                    <Clock className="w-3 h-3" />
-                    Keyframes
+                    <Layers className="w-3 h-3" />
+                    Segments
                   </h3>
                 </div>
                 <div className="flex-1 overflow-y-auto">
@@ -796,211 +897,59 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         </div>
                       </div>
 
+                      {/* Segment Details - shown when segment has content */}
                       {segment.status.includes('success') && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onViewSegment(segment); }}
-                          className="mt-2 text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1"
-                        >
-                          <Eye className="w-3 h-3" />
-                          View Details
-                        </button>
+                        <div className="mt-3 space-y-2" onClick={(e) => e.stopPropagation()}>
+                          {/* Preview thumbnail */}
+                          {(segment.videoUrl || segment.imageUrl) && (
+                            <div className="aspect-video bg-black rounded-lg overflow-hidden border border-zinc-700">
+                              {segment.videoUrl ? (
+                                <video
+                                  src={segment.videoUrl}
+                                  className="w-full h-full object-contain"
+                                  muted
+                                  loop
+                                  playsInline
+                                  autoPlay
+                                />
+                              ) : segment.imageUrl ? (
+                                <img
+                                  src={segment.imageUrl}
+                                  alt={segment.topic}
+                                  className="w-full h-full object-contain"
+                                />
+                              ) : null}
+                            </div>
+                          )}
+
+                          {/* Prompt */}
+                          {segment.prompt && (
+                            <div className="bg-zinc-800/50 rounded-lg p-2">
+                              <div className="flex items-center gap-1 mb-1">
+                                <Sparkles className="w-3 h-3 text-purple-400" />
+                                <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Image Prompt</span>
+                              </div>
+                              <p className="text-xs text-zinc-300 line-clamp-3">{segment.prompt}</p>
+                            </div>
+                          )}
+
+                          {/* Animation Prompt */}
+                          {segment.animationPrompt && (
+                            <div className="bg-zinc-800/50 rounded-lg p-2">
+                              <div className="flex items-center gap-1 mb-1">
+                                <Film className="w-3 h-3 text-green-400" />
+                                <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Animation</span>
+                              </div>
+                              <p className="text-xs text-zinc-300 line-clamp-2">{segment.animationPrompt}</p>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   ))}
                 </div>
               </div>
             </Panel>
-          </PanelGroup>
-        </Panel>
-
-        {/* Vertical Resize Handle */}
-        <PanelResizeHandle className="h-1.5 bg-zinc-800 hover:bg-purple-500/50 transition-colors cursor-row-resize flex items-center justify-center group">
-          <GripHorizontal className="w-4 h-3 text-zinc-600 group-hover:text-purple-400" />
-        </PanelResizeHandle>
-
-        {/* Timeline Panel */}
-        <Panel defaultSize={30} minSize={15} maxSize={60}>
-          <div className="h-full border-t border-zinc-800 bg-zinc-900/50 overflow-auto">
-        {/* Layer Controls */}
-        <div className="flex items-center gap-4 px-4 py-2 border-b border-zinc-800/50">
-          <div className="flex items-center gap-2 text-xs text-zinc-400">
-            <Layers className="w-3 h-3" />
-            <span className="font-medium">Layers:</span>
-          </div>
-          <button
-            onClick={() => toggleLayerVisibility('video')}
-            className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors ${
-              layerVisibility.video ? 'bg-blue-500/20 text-blue-400' : 'bg-zinc-800 text-zinc-500'
-            }`}
-          >
-            {layerVisibility.video ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-            Video
-          </button>
-          <button
-            onClick={() => toggleLayerVisibility('animation')}
-            className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors ${
-              layerVisibility.animation ? 'bg-green-500/20 text-green-400' : 'bg-zinc-800 text-zinc-500'
-            }`}
-          >
-            {layerVisibility.animation ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-            Animation
-          </button>
-        </div>
-
-        {/* Timeline Tracks */}
-        <div className="px-4 py-3" style={{ minWidth: `${100 * zoom}%` }}>
-          {/* Time Ruler */}
-          <div className="flex items-end h-6 mb-2 relative">
-            {duration > 0 && Array.from({ length: Math.ceil(duration / 10) + 1 }).map((_, i) => {
-              const time = i * 10;
-              const position = (time / duration) * 100;
-              if (position > 100) return null;
-              return (
-                <div
-                  key={i}
-                  className="absolute bottom-0 flex flex-col items-center"
-                  style={{ left: `${position}%` }}
-                >
-                  <span className="text-[10px] text-zinc-500 font-mono">{formatTime(time)}</span>
-                  <div className="w-px h-2 bg-zinc-700 mt-0.5" />
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Video Track */}
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-20 shrink-0">
-              <span className="text-[10px] uppercase tracking-wider text-blue-400 font-bold">Video</span>
-            </div>
-            <div className="flex-1 h-8 bg-blue-900/20 rounded border border-blue-500/20 relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-500/30 via-blue-600/20 to-blue-500/30" />
-              <div className="absolute inset-y-0 left-0 right-0 flex items-center justify-center">
-                <span className="text-[10px] text-blue-400/60 font-medium">Source Video</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Animation Track */}
-          <div className="flex items-center gap-2 mb-3">
-            <div className="w-20 shrink-0">
-              <span className="text-[10px] uppercase tracking-wider text-green-400 font-bold">Animation</span>
-            </div>
-            <div
-              ref={animationTrackRef}
-              className="flex-1 h-10 bg-zinc-800/50 rounded border border-zinc-700 relative overflow-visible"
-            >
-              {/* Segment clips on animation track */}
-              {analysis?.segments.map((segment) => {
-                const isVideoComplete = segment.status === 'video-success';
-                const isImageComplete = segment.status === 'image-success';
-                const isGenerating = segment.status.includes('generating');
-                const left = getSegmentPosition(segment.timestamp);
-                const segmentDuration = segment.duration || 5;
-                const width = duration > 0 ? (segmentDuration / duration) * 100 : 5;
-                const isDraggingThis = segmentDrag?.segmentId === segment.id;
-
-                // Color based on status
-                const getStatusClass = () => {
-                  if (isVideoComplete) return 'bg-gradient-to-r from-green-600/80 to-green-500/60 border border-green-400/50 hover:border-green-400';
-                  if (segment.status === 'generating-video') return 'bg-gradient-to-r from-purple-600/60 to-purple-500/40 border border-purple-400/50 animate-pulse';
-                  if (isImageComplete) return 'bg-gradient-to-r from-blue-600/60 to-blue-500/40 border border-blue-400/50';
-                  if (segment.status === 'generating-image') return 'bg-gradient-to-r from-blue-600/40 to-blue-500/20 border border-blue-400/30 animate-pulse';
-                  return 'bg-zinc-700/50 border border-zinc-600/50 border-dashed';
-                };
-
-                return (
-                  <div
-                    key={segment.id}
-                    className={`
-                      absolute top-1 bottom-1 rounded cursor-grab select-none group/segment
-                      ${getStatusClass()}
-                      ${activeSegment?.id === segment.id ? 'ring-2 ring-white/50' : ''}
-                      ${isDraggingThis ? 'ring-2 ring-purple-500 cursor-grabbing z-20' : 'z-10'}
-                    `}
-                    style={{ left: `${left}%`, width: `${Math.max(width, 2)}%` }}
-                    title={`${segment.topic} (${segmentDuration}s) - ${segment.status}`}
-                    onMouseDown={(e) => handleSegmentDragStart(e, segment, 'move')}
-                    onClick={(e) => { e.stopPropagation(); jumpToSegment(segment); }}
-                  >
-                    {/* Left resize handle */}
-                    <div
-                      className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-purple-500/50 rounded-l transition-colors"
-                      onMouseDown={(e) => handleSegmentDragStart(e, segment, 'resize-start')}
-                    />
-
-                    {/* Content */}
-                    <div className="px-2 py-0.5 overflow-hidden pointer-events-none">
-                      <span className="text-[9px] text-white font-medium truncate block">{segment.topic}</span>
-                      <span className="text-[8px] text-white/60 font-mono">{segmentDuration}s</span>
-                    </div>
-
-                    {/* Right resize handle */}
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-purple-500/50 rounded-r transition-colors"
-                      onMouseDown={(e) => handleSegmentDragStart(e, segment, 'resize-end')}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Scrub Bar / Playhead */}
-          <div
-            ref={timelineRef}
-            className="relative h-10 bg-zinc-800/30 rounded-lg cursor-pointer group"
-            onClick={handleTimelineClick}
-            onMouseDown={() => setIsDragging(true)}
-          >
-            {/* Progress fill */}
-            <div
-              className="absolute top-0 left-0 bottom-0 bg-gradient-to-r from-purple-600/30 to-pink-600/20 rounded-l-lg"
-              style={{ width: `${(currentTime / duration) * 100}%` }}
-            />
-
-            {/* Keyframe markers */}
-            {analysis?.segments.map((segment) => {
-              const position = getSegmentPosition(segment.timestamp);
-              const hasContent = segment.status.includes('success');
-
-              return (
-                <div
-                  key={segment.id}
-                  className="absolute top-0 bottom-0 flex flex-col items-center justify-center z-10"
-                  style={{ left: `${position}%` }}
-                >
-                  <div
-                    className={`
-                      w-3 h-3 rotate-45 cursor-pointer transition-transform hover:scale-125
-                      ${hasContent
-                        ? 'bg-green-500 shadow-lg shadow-green-500/50'
-                        : 'bg-zinc-500 border-2 border-zinc-400'}
-                      ${activeSegment?.id === segment.id ? 'scale-125 ring-2 ring-white' : ''}
-                    `}
-                    onClick={(e) => { e.stopPropagation(); jumpToSegment(segment); }}
-                    title={`${segment.formattedTime} - ${segment.topic}`}
-                  />
-                </div>
-              );
-            })}
-
-            {/* Playhead */}
-            <div
-              className="absolute top-0 bottom-0 w-0.5 bg-white shadow-lg shadow-white/50 z-20 pointer-events-none"
-              style={{ left: `${(currentTime / duration) * 100}%` }}
-            >
-              <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-3 bg-white rounded-full" />
-            </div>
-
-            {/* Hover time indicator */}
-            <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-              <div className="absolute top-0 left-0 h-full w-full" />
-            </div>
-          </div>
-        </div>
-          </div>
-        </Panel>
       </PanelGroup>
     </div>
   );

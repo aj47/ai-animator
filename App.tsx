@@ -467,7 +467,6 @@ const App: React.FC = () => {
         statusMessage={statusMessage}
         pipelineState={pipelineState}
         onStopGeneration={handleStopGeneration}
-        onViewSegment={handleViewSegment}
         onUpdateSegmentDuration={handleUpdateSegmentDuration}
         onUpdateSegmentTimestamp={handleUpdateSegmentTimestamp}
         onUpdateChromaKey={handleUpdateChromaKey}
