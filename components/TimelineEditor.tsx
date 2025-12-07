@@ -418,6 +418,13 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     }
   }, [activeSegment]);
 
+  // Trigger chroma canvas update when settings change
+  useEffect(() => {
+    if (activeSegment?.chromaKey?.enabled) {
+      updateChromaCanvas();
+    }
+  }, [activeSegment?.chromaKey, updateChromaCanvas]);
+
   // Empty state - no video loaded
   if (!videoUrl) {
     return (
