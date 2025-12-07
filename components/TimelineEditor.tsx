@@ -88,7 +88,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
 
   // Chroma key state
   const [isPickingColor, setIsPickingColor] = useState(false);
-  const [showChromaPanel, setShowChromaPanel] = useState(false);
+  const [showChromaPanel, setShowChromaPanel] = useState(true); // Auto-show by default
 
   // File picker handlers
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -171,6 +171,18 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
       }
     }
   }, [analysis]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-initialize chroma key for segments with images but no chromaKey settings
+  useEffect(() => {
+    if (!analysis) return;
+
+    analysis.segments.forEach(segment => {
+      // If segment has an image but no chromaKey, initialize with defaults
+      if ((segment.imageUrl || segment.videoUrl) && !segment.chromaKey) {
+        onUpdateChromaKey(segment.id, { ...DEFAULT_CHROMA_KEY_SETTINGS });
+      }
+    });
+  }, [analysis, onUpdateChromaKey]);
 
   // Update current time during playback
   useEffect(() => {
