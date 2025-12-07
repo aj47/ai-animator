@@ -55,6 +55,17 @@ const App: React.FC = () => {
     setPipelineState(prev => ({ ...prev, isRunning: false, isPaused: true }));
   };
 
+  // Resume generation from where it left off
+  const handleResumeGeneration = async () => {
+    if (!analysis || !videoUrl) return;
+
+    stopGenerationRef.current = false;
+    setPipelineState(prev => ({ ...prev, isRunning: true, isPaused: false }));
+
+    // Continue the automatic pipeline with current state
+    await runAutomaticPipeline(analysis, videoUrl, videoAspectRatio);
+  };
+
   const handleFileSelect = async (file: File) => {
     if (!hasKey) {
         await handleConnectKey();
@@ -417,6 +428,27 @@ const App: React.FC = () => {
     await handleGenerateSegmentImage({ ...latestSegment, status: 'idle', imageUrl: undefined, videoUrl: undefined });
   };
 
+  const handleRegenerateVideo = async (segment: Segment) => {
+    // Get the latest segment data from analysis
+    const latestSegment = analysis?.segments.find(s => s.id === segment.id);
+    if (!latestSegment || !latestSegment.imageUrl) return;
+
+    // Clear existing video and regenerate (keep the image)
+    setAnalysis(prev => prev ? ({
+      ...prev,
+      segments: prev.segments.map(s =>
+        s.id === segment.id ? { ...s, videoUrl: undefined, status: 'image-success' } : s
+      )
+    }) : null);
+
+    if (activeSegment && activeSegment.id === segment.id) {
+      setActiveSegment(prev => prev ? ({ ...prev, videoUrl: undefined, status: 'image-success' }) : null);
+    }
+
+    // Generate new video
+    await handleGenerateSegmentVideo({ ...latestSegment, videoUrl: undefined, status: 'image-success' });
+  };
+
   const handleUpdateSegmentDuration = (segmentId: string, newDuration: number) => {
     setAnalysis(prev => prev ? ({
       ...prev,
@@ -483,6 +515,7 @@ const App: React.FC = () => {
         statusMessage={statusMessage}
         pipelineState={pipelineState}
         onStopGeneration={handleStopGeneration}
+        onResumeGeneration={handleResumeGeneration}
         onUpdateSegmentDuration={handleUpdateSegmentDuration}
         onUpdateSegmentTimestamp={handleUpdateSegmentTimestamp}
         onUpdateChromaKey={handleUpdateChromaKey}
@@ -557,6 +590,7 @@ const App: React.FC = () => {
                 onBack={handleBackToTimeline}
                 onAnimate={(seg) => handleGenerateSegmentVideo(seg)}
                 onRegenerateImage={handleRegenerateImage}
+                onRegenerateVideo={handleRegenerateVideo}
                 onUpdateSegmentPrompts={handleUpdateSegmentPrompts}
                 onGenerateImage={handleGenerateSegmentImage}
                 onUpdateChromaKey={handleUpdateChromaKey}

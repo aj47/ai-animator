@@ -21,6 +21,7 @@ interface TimelineEditorProps {
   statusMessage: string;
   pipelineState: GenerationPipelineState;
   onStopGeneration: () => void;
+  onResumeGeneration: () => void;
   onUpdateSegmentDuration: (segmentId: string, newDuration: number) => void;
   onUpdateSegmentTimestamp: (segmentId: string, newTimestamp: number) => void;
   onUpdateChromaKey: (segmentId: string, settings: ChromaKeySettings) => void;
@@ -51,6 +52,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
   statusMessage,
   pipelineState,
   onStopGeneration,
+  onResumeGeneration,
   onUpdateSegmentDuration,
   onUpdateSegmentTimestamp,
   onUpdateChromaKey,
@@ -524,6 +526,19 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
               >
                 <StopCircle className="w-3 h-3" />
                 Stop
+              </button>
+            </div>
+          )}
+          {pipelineState.isPaused && !pipelineState.isRunning && pipelineState.currentPhase !== 'complete' && (
+            <div className="flex items-center gap-3 bg-yellow-900/30 px-4 py-2 rounded-full border border-yellow-500/30">
+              <StopCircle className="w-4 h-4 text-yellow-400" />
+              <span className="text-sm text-yellow-300">Paused</span>
+              <button
+                onClick={onResumeGeneration}
+                className="flex items-center gap-1 bg-green-500/20 hover:bg-green-500/30 text-green-400 px-3 py-1 rounded-full text-xs font-medium transition-colors"
+              >
+                <Play className="w-3 h-3" />
+                Resume
               </button>
             </div>
           )}

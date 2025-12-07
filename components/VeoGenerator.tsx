@@ -11,12 +11,13 @@ interface VeoGeneratorProps {
   onBack: () => void;
   onAnimate: (segment: Segment) => void;
   onRegenerateImage: (segment: Segment) => void;
+  onRegenerateVideo: (segment: Segment) => void;
   onUpdateSegmentPrompts: (segmentId: string, prompt: string, animationPrompt: string) => void;
   onGenerateImage: (segment: Segment) => void;
   onUpdateChromaKey?: (segmentId: string, settings: ChromaKeySettings) => void;
 }
 
-const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, onBack, onAnimate, onRegenerateImage, onUpdateSegmentPrompts, onGenerateImage, onUpdateChromaKey }) => {
+const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, onBack, onAnimate, onRegenerateImage, onRegenerateVideo, onUpdateSegmentPrompts, onGenerateImage, onUpdateChromaKey }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayImageRef = useRef<HTMLImageElement>(null);
   const overlayVideoRef = useRef<HTMLVideoElement>(null);
@@ -402,7 +403,7 @@ const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, 
                 )
               )}
 
-              {/* Animate Button - only show if image exists */}
+              {/* Animate Button - only show if image exists and no video yet */}
               {segment.imageUrl && !segment.videoUrl && !isEditingPrompt && !isGenerating && (
                 <button
                   onClick={() => onAnimate(segment)}
@@ -410,6 +411,17 @@ const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, 
                 >
                   <Film className="w-4 h-4" />
                   Animate with Veo
+                </button>
+              )}
+
+              {/* Regenerate Animation Button - show if video already exists */}
+              {segment.videoUrl && !isEditingPrompt && !isGenerating && (
+                <button
+                  onClick={() => onRegenerateVideo(segment)}
+                  className="flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white font-medium py-3 px-6 rounded-full transition-colors border border-zinc-700"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Regenerate Animation
                 </button>
               )}
 
