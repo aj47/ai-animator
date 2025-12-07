@@ -69,11 +69,21 @@ export const extractFrameFromVideo = (videoUrl: string, time = 0): Promise<{ bas
 
     video.onerror = (e) => {
       clearTimeout(timeout);
+      const mediaError = video.error;
+      const errorDetails = mediaError ? {
+        code: mediaError.code,
+        message: mediaError.message,
+        // MediaError codes: 1=ABORTED, 2=NETWORK, 3=DECODE, 4=SRC_NOT_SUPPORTED
+        codeDescription: ['', 'MEDIA_ERR_ABORTED', 'MEDIA_ERR_NETWORK', 'MEDIA_ERR_DECODE', 'MEDIA_ERR_SRC_NOT_SUPPORTED'][mediaError.code] || 'UNKNOWN'
+      } : null;
       console.error('[extractFrameFromVideo] Video error:', e);
-      reject(new Error("Error loading video for frame extraction"));
+      console.error('[extractFrameFromVideo] Media error details:', errorDetails);
+      console.error('[extractFrameFromVideo] Video URL:', videoUrl.substring(0, 100));
+      reject(new Error(`Error loading video for frame extraction: ${errorDetails?.codeDescription || 'Unknown error'}`));
     };
 
     // Set src after all handlers are attached
+    console.log('[extractFrameFromVideo] Setting video src:', videoUrl.substring(0, 100));
     video.src = videoUrl;
   });
 };
