@@ -156,6 +156,16 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     return null;
   }, [analysis]);
 
+  // Sync activeSegment when analysis changes (to pick up chromaKey updates)
+  useEffect(() => {
+    if (activeSegment && analysis) {
+      const updatedSegment = analysis.segments.find(s => s.id === activeSegment.id);
+      if (updatedSegment && updatedSegment !== activeSegment) {
+        setActiveSegment(updatedSegment);
+      }
+    }
+  }, [analysis]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Update current time during playback
   useEffect(() => {
     const video = videoRef.current;
