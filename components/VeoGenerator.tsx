@@ -218,43 +218,49 @@ const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, 
                       )}
 
                       {segment.videoUrl ? (
-                        showChromaPreview ? (
-                          <canvas
-                            ref={previewCanvasRef}
-                            className="absolute inset-0 w-full h-full object-contain"
-                            onClick={handleImageClick}
-                          />
-                        ) : (
+                        <>
+                          {/* Hidden video for chroma key processing */}
                           <video
                             ref={overlayVideoRef}
                             src={segment.videoUrl}
-                            className="w-full h-full object-contain"
+                            className={`w-full h-full object-contain ${showChromaPreview ? 'hidden' : ''}`}
                             autoPlay
                             loop
                             muted
                             playsInline
-                            controls={!isPickingColor}
+                            controls={!isPickingColor && !showChromaPreview}
                             onClick={handleImageClick}
                             onTimeUpdate={() => showChromaPreview && updateChromaPreview()}
                           />
-                        )
+                          {/* Chroma keyed canvas overlay */}
+                          {showChromaPreview && (
+                            <canvas
+                              ref={previewCanvasRef}
+                              className="absolute inset-0 w-full h-full object-contain"
+                              onClick={handleImageClick}
+                            />
+                          )}
+                        </>
                       ) : segment.imageUrl ? (
-                        showChromaPreview ? (
-                          <canvas
-                            ref={previewCanvasRef}
-                            className="absolute inset-0 w-full h-full object-contain"
-                            onClick={handleImageClick}
-                          />
-                        ) : (
+                        <>
+                          {/* Hidden image for chroma key processing */}
                           <img
                             ref={overlayImageRef}
                             src={segment.imageUrl}
                             alt="Generated Green Screen Asset"
-                            className="w-full h-full object-contain"
+                            className={`w-full h-full object-contain ${showChromaPreview ? 'hidden' : ''}`}
                             onClick={handleImageClick}
                             onLoad={() => showChromaPreview && updateChromaPreview()}
                           />
-                        )
+                          {/* Chroma keyed canvas overlay */}
+                          {showChromaPreview && (
+                            <canvas
+                              ref={previewCanvasRef}
+                              className="absolute inset-0 w-full h-full object-contain"
+                              onClick={handleImageClick}
+                            />
+                          )}
+                        </>
                       ) : (
                           <div className="w-full h-full flex flex-col items-center justify-center text-zinc-500">
                             {isGenerating ? (
