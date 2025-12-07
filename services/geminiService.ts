@@ -352,7 +352,7 @@ export const generateVeoAnimation = async (
   }
 
   const config = {
-    model: 'veo-3.1-fast-generate-preview',
+    model: 'veo-3.0-generate-001',
     numberOfVideos: 1,
     resolution: '720p',
     aspectRatio: veoAspectRatio,
@@ -365,7 +365,7 @@ export const generateVeoAnimation = async (
   logger.api.request('generateVideos', { prompt: fullPrompt, config });
 
   let operation = await ai.models.generateVideos({
-    model: 'veo-3.1-fast-generate-preview',
+    model: 'veo-3.0-generate-001',
     prompt: fullPrompt,
     image: {
       imageBytes: imageBase64Data,

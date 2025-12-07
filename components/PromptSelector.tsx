@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { AnalysisResult, Segment } from '../types';
-import { Sparkles, Film, Music, Layers, Clock, Loader2, Move, Zap, PlayCircle, Wand2, Pencil, Check, X, RefreshCw, Download } from 'lucide-react';
+import { Sparkles, Film, Music, Layers, Clock, Loader2, Pencil, Check, X, RefreshCw, Download } from 'lucide-react';
 
 // Inline SegmentCard component with full editing capabilities
 interface SegmentCardProps {
@@ -10,8 +10,6 @@ interface SegmentCardProps {
   onGenerateVideo: (segment: Segment) => Promise<string | null>;
   onUpdatePrompts: (segmentId: string, prompt: string, animationPrompt: string) => void;
   onRegenerateImage: (segment: Segment) => void;
-  disabled: boolean;
-  isBatchProcessing: boolean;
 }
 
 const SegmentCard: React.FC<SegmentCardProps> = ({
@@ -20,8 +18,6 @@ const SegmentCard: React.FC<SegmentCardProps> = ({
   onGenerateVideo,
   onUpdatePrompts,
   onRegenerateImage,
-  disabled,
-  isBatchProcessing,
 }) => {
   // Default to edit mode if no image has been generated yet
   const [isEditing, setIsEditing] = useState(!segment.imageUrl);
@@ -281,13 +277,8 @@ interface PromptSelectorProps {
   onGenerateSegmentImage: (segment: Segment) => Promise<string | null>;
   onGenerateSegmentVideo: (segment: Segment) => Promise<string | null>;
   onViewSegment: (segment: Segment) => void;
-  onBatchGenerateImages: () => void;
-  onBatchAnimate: () => void;
-  onFullAutoGenerate: () => void;
   onUpdateSegmentPrompts: (segmentId: string, prompt: string, animationPrompt: string) => void;
   onRegenerateImage: (segment: Segment) => void;
-  isBatchProcessing: boolean;
-  disabled: boolean;
 }
 
 const PromptSelector: React.FC<PromptSelectorProps> = ({
@@ -295,24 +286,9 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({
   onGenerateSegmentImage,
   onGenerateSegmentVideo,
   onViewSegment,
-  onBatchGenerateImages,
-  onBatchAnimate,
-  onFullAutoGenerate,
   onUpdateSegmentPrompts,
   onRegenerateImage,
-  isBatchProcessing,
-  disabled
 }) => {
-  
-  const totalCount = analysis.segments.length;
-  
-  // Counts for button states
-  const idleCount = analysis.segments.filter(s => s.status === 'idle').length;
-  const readyToAnimateCount = analysis.segments.filter(s => s.status === 'image-success').length;
-  const fullyCompleteCount = analysis.segments.filter(s => s.status === 'video-success').length;
-
-  const isAllComplete = fullyCompleteCount === totalCount;
-  
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       
@@ -335,64 +311,14 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({
       </div>
 
       <div>
-        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 mb-6">
-            <div>
-                <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                <Layers className="w-5 h-5 text-green-400" />
-                Detected Topics & Segments
-                </h3>
-                <p className="text-zinc-400 text-sm mt-1">
-                Generate Green Screen overlays for each topic, then animate them with Veo.
-                </p>
-            </div>
-
-            {/* Batch Actions */}
-            <div className="flex flex-wrap gap-3">
-                
-                {isBatchProcessing ? (
-                    <div className="flex items-center gap-3 bg-zinc-800 px-5 py-2 rounded-full border border-zinc-700 animate-pulse">
-                        <Loader2 className="w-4 h-4 animate-spin text-green-400" />
-                        <span className="text-sm font-medium text-zinc-300">Parallel Processing...</span>
-                    </div>
-                ) : (
-                    <>
-                         {/* Full Auto Button (Only if there are things to do) */}
-                         {!isAllComplete && (
-                             <button
-                                onClick={onFullAutoGenerate}
-                                disabled={disabled}
-                                className="flex items-center gap-2 bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 hover:from-green-500 hover:to-teal-500 text-white font-bold py-2 px-6 rounded-full transition-all shadow-lg shadow-green-900/20 text-sm border border-white/10"
-                             >
-                                <Wand2 className="w-4 h-4" />
-                                Magic Auto-Generate All
-                             </button>
-                         )}
-
-                         {/* Granular Batch Actions */}
-                        {idleCount > 0 && (
-                            <button 
-                                onClick={onBatchGenerateImages}
-                                disabled={disabled}
-                                className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white font-medium py-2 px-5 rounded-full transition-all border border-zinc-700 text-sm"
-                            >
-                                <Zap className="w-4 h-4" />
-                                Images Only ({idleCount})
-                            </button>
-                        )}
-
-                        {readyToAnimateCount > 0 && (
-                            <button 
-                                onClick={onBatchAnimate}
-                                disabled={disabled}
-                                className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white font-medium py-2 px-5 rounded-full transition-all border border-zinc-700 text-sm"
-                            >
-                                <Film className="w-4 h-4" />
-                                Animate Only ({readyToAnimateCount})
-                            </button>
-                        )}
-                    </>
-                )}
-            </div>
+        <div className="mb-6">
+            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+              <Layers className="w-5 h-5 text-green-400" />
+              Detected Topics & Segments
+            </h3>
+            <p className="text-zinc-400 text-sm mt-1">
+              Generate Green Screen overlays for each topic, then animate them with Veo.
+            </p>
         </div>
 
         <div className="space-y-4">
@@ -404,8 +330,6 @@ const PromptSelector: React.FC<PromptSelectorProps> = ({
               onGenerateVideo={onGenerateSegmentVideo}
               onUpdatePrompts={onUpdateSegmentPrompts}
               onRegenerateImage={onRegenerateImage}
-              disabled={disabled}
-              isBatchProcessing={isBatchProcessing}
             />
           ))}
         </div>

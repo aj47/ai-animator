@@ -20,7 +20,6 @@ const App: React.FC = () => {
 
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [activeSegment, setActiveSegment] = useState<Segment | null>(null);
-  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
 
   const [statusMessage, setStatusMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -51,26 +50,6 @@ const App: React.FC = () => {
         console.error("Failed to select key", e);
         logger.api.error('promptApiKey', e);
     }
-  };
-
-  const handleStopGeneration = () => {
-    logger.ui.buttonClick('stopGeneration');
-    logger.pipeline.stopped();
-    stopGenerationRef.current = true;
-    setPipelineState(prev => ({ ...prev, isRunning: false, isPaused: true }));
-  };
-
-  // Resume generation from where it left off
-  const handleResumeGeneration = async () => {
-    if (!analysis || !videoUrl) return;
-
-    logger.ui.buttonClick('resumeGeneration');
-    logger.pipeline.resumed();
-    stopGenerationRef.current = false;
-    setPipelineState(prev => ({ ...prev, isRunning: true, isPaused: false }));
-
-    // Continue the automatic pipeline with current state
-    await runAutomaticPipeline(analysis, videoUrl, videoAspectRatio);
   };
 
   const handleFileSelect = async (file: File) => {
@@ -114,17 +93,13 @@ const App: React.FC = () => {
       setState(AppState.IDLE); // Stay on timeline landing
       logger.ui.stateChange(AppState.ANALYZING, AppState.IDLE);
 
-      // 4. Initialize pipeline state
+      // 4. Initialize pipeline state (manual mode - not running automatically)
       setPipelineState({
-        isRunning: true,
+        isRunning: false,
         isPaused: false,
-        currentPhase: 'prompts',
+        currentPhase: 'idle',
         progress: { promptsGenerated: result.segments.length, imagesGenerated: 0, videosGenerated: 0, totalSegments: result.segments.length }
       });
-      logger.pipeline.start(result.segments.length);
-
-      // 5. Start automatic generation pipeline
-      await runAutomaticPipeline(result, url, aspectRatio);
 
     } catch (err: any) {
       console.error(err);
@@ -133,144 +108,6 @@ const App: React.FC = () => {
       setState(AppState.ERROR);
       logger.ui.stateChange(state, AppState.ERROR);
     }
-  };
-
-  // Automatic generation pipeline - runs after video analysis
-  const runAutomaticPipeline = async (analysisResult: AnalysisResult, url: string, aspectRatio: string) => {
-    const segments = analysisResult.segments;
-
-    // Phase 1: Generate all images
-    logger.pipeline.phaseChange('images');
-    setPipelineState(prev => ({ ...prev, currentPhase: 'images' }));
-
-    for (let i = 0; i < segments.length; i++) {
-      if (stopGenerationRef.current) break;
-
-      const segment = segments[i];
-      if (segment.status !== 'idle') continue;
-
-      try {
-        // Update status to generating with initial progress
-        const initialProgress: ImageGenerationProgress = { step: 1, message: 'Starting image generation...' };
-        logger.state.segmentStatusChange(segment.id, segment.status, 'generating-image');
-        setAnalysis(prev => prev ? ({
-          ...prev,
-          segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'generating-image', generationProgress: initialProgress } : s)
-        }) : null);
-
-        const { base64 } = await extractFrameFromVideo(url, segment.timestamp);
-
-        // Progress callback to update segment with step info and intermediate image
-        const onProgress = (step: 1 | 2, message: string, intermediateImageUrl?: string) => {
-          const progress: ImageGenerationProgress = { step, message, intermediateImageUrl };
-          setAnalysis(prev => prev ? ({
-            ...prev,
-            segments: prev.segments.map(s => s.id === segment.id ? { ...s, generationProgress: progress } : s)
-          }) : null);
-        };
-
-        const result = await generateImageAsset(segment.prompt, base64, aspectRatio, onProgress, segment.id);
-
-        // Detect dominant green color for chroma key
-        const dominantGreen = await detectDominantGreenFromDataUrl(result.finalImageUrl);
-        logger.imageGen.chromaDetected(segment.id, dominantGreen);
-        const chromaKey = {
-          ...DEFAULT_CHROMA_KEY_SETTINGS,
-          keyColor: dominantGreen
-        };
-
-        logger.state.segmentStatusChange(segment.id, 'generating-image', 'image-success');
-        setAnalysis(prev => prev ? ({
-          ...prev,
-          segments: prev.segments.map(s => s.id === segment.id ? {
-            ...s,
-            status: 'image-success',
-            imageUrl: result.finalImageUrl,
-            chromaKey,
-            generationProgress: { step: 2, message: 'Complete!', intermediateImageUrl: result.intermediateImageUrl }
-          } : s)
-        }) : null);
-
-        setPipelineState(prev => {
-          const newProgress = { ...prev.progress, imagesGenerated: prev.progress.imagesGenerated + 1 };
-          logger.pipeline.progress(newProgress);
-          return { ...prev, progress: newProgress };
-        });
-
-      } catch (err: any) {
-        console.error(`Failed to generate image for segment ${segment.id}:`, err);
-        logger.imageGen.error(segment.id, err);
-        logger.state.segmentStatusChange(segment.id, 'generating-image', 'error');
-        setAnalysis(prev => prev ? ({
-          ...prev,
-          segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'error', error: err.message, generationProgress: undefined } : s)
-        }) : null);
-      }
-    }
-
-    if (stopGenerationRef.current) {
-      setPipelineState(prev => ({ ...prev, isRunning: false }));
-      return;
-    }
-
-    // Phase 2: Generate all videos
-    logger.pipeline.phaseChange('videos');
-    setPipelineState(prev => ({ ...prev, currentPhase: 'videos' }));
-
-    // Get updated analysis state for video generation
-    const currentAnalysis = await new Promise<AnalysisResult | null>(resolve => {
-      setAnalysis(prev => {
-        resolve(prev);
-        return prev;
-      });
-    });
-
-    if (!currentAnalysis) return;
-
-    for (let i = 0; i < currentAnalysis.segments.length; i++) {
-      if (stopGenerationRef.current) break;
-
-      const segment = currentAnalysis.segments[i];
-      if (segment.status !== 'image-success' || !segment.imageUrl) continue;
-
-      try {
-        logger.state.segmentStatusChange(segment.id, segment.status, 'generating-video');
-        setAnalysis(prev => prev ? ({
-          ...prev,
-          segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'generating-video' } : s)
-        }) : null);
-
-        const base64Data = segment.imageUrl.split(',')[1];
-        const mimeType = segment.imageUrl.split(':')[1].split(';')[0];
-        const videoUri = await generateVeoAnimation(segment.animationPrompt, base64Data, mimeType, aspectRatio, segment.id);
-
-        logger.state.segmentStatusChange(segment.id, 'generating-video', 'video-success');
-        setAnalysis(prev => prev ? ({
-          ...prev,
-          segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'video-success', videoUrl: videoUri } : s)
-        }) : null);
-
-        setPipelineState(prev => {
-          const newProgress = { ...prev.progress, videosGenerated: prev.progress.videosGenerated + 1 };
-          logger.pipeline.progress(newProgress);
-          return { ...prev, progress: newProgress };
-        });
-
-      } catch (err: any) {
-        console.error(`Failed to generate video for segment ${segment.id}:`, err);
-        logger.videoGen.error(segment.id, err);
-        logger.state.segmentStatusChange(segment.id, 'generating-video', 'error');
-        setAnalysis(prev => prev ? ({
-          ...prev,
-          segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'error', error: err.message } : s)
-        }) : null);
-      }
-    }
-
-    // Complete
-    logger.pipeline.phaseChange('complete');
-    logger.pipeline.complete();
-    setPipelineState(prev => ({ ...prev, isRunning: false, currentPhase: 'complete' }));
   };
 
   const handleGenerateSegmentImage = async (segment: Segment): Promise<string | null> => {
@@ -430,75 +267,6 @@ const App: React.FC = () => {
         }) : null);
         return null;
     }
-  };
-
-  const handleBatchGenerateImages = async () => {
-      logger.ui.buttonClick('batchGenerateImages');
-      if (!analysis || !videoUrl) return;
-      setIsBatchProcessing(true);
-      stopGenerationRef.current = false;
-      setPipelineState(prev => ({ ...prev, isPaused: false }));
-
-      const segmentsToProcess = analysis.segments.filter(s => s.status === 'idle');
-      logger.pipeline.start(segmentsToProcess.length);
-
-      // Parallel execution using Promise.all
-      const promises = segmentsToProcess.map(segment => handleGenerateSegmentImage(segment));
-      await Promise.all(promises);
-
-      setIsBatchProcessing(false);
-      logger.pipeline.complete();
-  };
-
-  const handleBatchAnimate = async () => {
-    logger.ui.buttonClick('batchAnimate');
-    if (!analysis) return;
-    setIsBatchProcessing(true);
-    stopGenerationRef.current = false;
-    setPipelineState(prev => ({ ...prev, isPaused: false }));
-
-    const segmentsToProcess = analysis.segments.filter(s => s.status === 'image-success');
-    logger.pipeline.start(segmentsToProcess.length);
-
-    // Parallel execution
-    const promises = segmentsToProcess.map(segment => handleGenerateSegmentVideo(segment));
-    await Promise.all(promises);
-
-    setIsBatchProcessing(false);
-    logger.pipeline.complete();
-  };
-
-  const handleFullAutoGenerate = async () => {
-    logger.ui.buttonClick('fullAutoGenerate');
-    if (!analysis) return;
-    setIsBatchProcessing(true);
-    stopGenerationRef.current = false;
-    setPipelineState(prev => ({ ...prev, isPaused: false }));
-
-    // Process all segments that aren't already done
-    const segments = analysis.segments;
-    logger.pipeline.start(segments.length);
-
-    const promises = segments.map(async (segment) => {
-        // Skip if already has video
-        if (segment.status === 'video-success' || segment.status === 'generating-video') return;
-
-        let currentImgUrl = segment.imageUrl;
-
-        // Step 1: Generate Image if needed
-        if (segment.status === 'idle' || segment.status === 'error' || !currentImgUrl) {
-           currentImgUrl = await handleGenerateSegmentImage(segment);
-        }
-
-        // Step 2: Generate Video if we have an image
-        if (currentImgUrl) {
-            await handleGenerateSegmentVideo(segment, currentImgUrl);
-        }
-    });
-
-    await Promise.all(promises);
-    setIsBatchProcessing(false);
-    logger.pipeline.complete();
   };
 
   const handleViewSegment = (segment: Segment) => {
@@ -678,8 +446,6 @@ const App: React.FC = () => {
         isLoading={state === AppState.ANALYZING}
         statusMessage={statusMessage}
         pipelineState={pipelineState}
-        onStopGeneration={handleStopGeneration}
-        onResumeGeneration={handleResumeGeneration}
         onUpdateSegmentDuration={handleUpdateSegmentDuration}
         onUpdateSegmentTimestamp={handleUpdateSegmentTimestamp}
         onUpdateChromaKey={handleUpdateChromaKey}
@@ -739,13 +505,8 @@ const App: React.FC = () => {
                 onGenerateSegmentImage={handleGenerateSegmentImage}
                 onGenerateSegmentVideo={handleGenerateSegmentVideo}
                 onViewSegment={handleViewSegment}
-                onBatchGenerateImages={handleBatchGenerateImages}
-                onBatchAnimate={handleBatchAnimate}
-                onFullAutoGenerate={handleFullAutoGenerate}
                 onUpdateSegmentPrompts={handleUpdateSegmentPrompts}
                 onRegenerateImage={handleRegenerateImage}
-                isBatchProcessing={isBatchProcessing}
-                disabled={isBatchProcessing}
              />
           </div>
         )}

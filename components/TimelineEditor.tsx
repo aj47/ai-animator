@@ -20,8 +20,6 @@ interface TimelineEditorProps {
   isLoading: boolean;
   statusMessage: string;
   pipelineState: GenerationPipelineState;
-  onStopGeneration: () => void;
-  onResumeGeneration: () => void;
   onUpdateSegmentDuration: (segmentId: string, newDuration: number) => void;
   onUpdateSegmentTimestamp: (segmentId: string, newTimestamp: number) => void;
   onUpdateChromaKey: (segmentId: string, settings: ChromaKeySettings) => void;
@@ -54,8 +52,6 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
   isLoading,
   statusMessage,
   pipelineState,
-  onStopGeneration,
-  onResumeGeneration,
   onUpdateSegmentDuration,
   onUpdateSegmentTimestamp,
   onUpdateChromaKey,
@@ -582,40 +578,8 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
           <h1 className="text-lg font-bold text-white">Timeline Editor</h1>
         </div>
 
-        {/* Center: Pipeline status */}
+        {/* Center: Spacer */}
         <div className="flex items-center gap-4">
-          {pipelineState.isRunning && (
-            <div className="flex items-center gap-3 bg-purple-900/30 px-4 py-2 rounded-full border border-purple-500/30">
-              <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
-              <span className="text-sm text-purple-300">{getPhaseLabel()}</span>
-              <button
-                onClick={onStopGeneration}
-                className="flex items-center gap-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 px-3 py-1 rounded-full text-xs font-medium transition-colors"
-              >
-                <StopCircle className="w-3 h-3" />
-                Stop
-              </button>
-            </div>
-          )}
-          {pipelineState.isPaused && !pipelineState.isRunning && pipelineState.currentPhase !== 'complete' && (
-            <div className="flex items-center gap-3 bg-yellow-900/30 px-4 py-2 rounded-full border border-yellow-500/30">
-              <StopCircle className="w-4 h-4 text-yellow-400" />
-              <span className="text-sm text-yellow-300">Paused</span>
-              <button
-                onClick={onResumeGeneration}
-                className="flex items-center gap-1 bg-green-500/20 hover:bg-green-500/30 text-green-400 px-3 py-1 rounded-full text-xs font-medium transition-colors"
-              >
-                <Play className="w-3 h-3" />
-                Resume
-              </button>
-            </div>
-          )}
-          {pipelineState.currentPhase === 'complete' && (
-            <div className="flex items-center gap-2 bg-green-900/30 px-4 py-2 rounded-full border border-green-500/30">
-              <CheckCircle2 className="w-4 h-4 text-green-400" />
-              <span className="text-sm text-green-300">Complete</span>
-            </div>
-          )}
         </div>
 
         {/* Right: Zoom controls */}
