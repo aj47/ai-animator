@@ -4,10 +4,10 @@ import {
   Play, Pause, SkipBack, SkipForward, Volume2, VolumeX,
   Layers, Film, Sparkles, Eye, EyeOff, Upload, Sliders,
   Diamond, Maximize2, ZoomIn, ZoomOut, Clock, GripVertical, GripHorizontal,
-  Plus, Minus, Loader2, StopCircle, CheckCircle2, Image, Video
+  Plus, Minus, Loader2, StopCircle, CheckCircle2, Image, Video, Move, RotateCcw
 } from 'lucide-react';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import { AnalysisResult, Segment, GenerationPipelineState, ChromaKeySettings, DEFAULT_CHROMA_KEY_SETTINGS } from '../types';
+import { AnalysisResult, Segment, GenerationPipelineState, ChromaKeySettings, DEFAULT_CHROMA_KEY_SETTINGS, OverlayTransform, DEFAULT_OVERLAY_TRANSFORM } from '../types';
 import { formatTime } from '../utils/videoUtils';
 import { MAX_VIDEO_SIZE_MB } from '../constants';
 import ChromaKeyControls from './ChromaKeyControls';
@@ -25,6 +25,7 @@ interface TimelineEditorProps {
   onUpdateSegmentDuration: (segmentId: string, newDuration: number) => void;
   onUpdateSegmentTimestamp: (segmentId: string, newTimestamp: number) => void;
   onUpdateChromaKey: (segmentId: string, settings: ChromaKeySettings) => void;
+  onUpdateOverlayTransform: (segmentId: string, transform: OverlayTransform) => void;
   hasKey: boolean;
   onConnectKey: () => void;
   onGenerateSegmentImage?: (segment: Segment) => Promise<string | null>;
@@ -58,6 +59,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
   onUpdateSegmentDuration,
   onUpdateSegmentTimestamp,
   onUpdateChromaKey,
+  onUpdateOverlayTransform,
   hasKey,
   onConnectKey,
   onGenerateSegmentImage,
@@ -601,53 +603,69 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                   />
 
                   {/* Animation Overlay Layer - with chroma key support */}
-                  {activeSegment?.videoUrl && layerVisibility.animation && (
-                    <>
-                      {/* Hidden video for chroma key processing */}
-                      <video
-                        ref={overlayVideoRef}
-                        src={activeSegment.videoUrl}
-                        className={`absolute inset-0 w-full h-full object-contain ${activeSegment.chromaKey?.enabled ? 'hidden' : ''}`}
-                        style={!activeSegment.chromaKey?.enabled ? { mixBlendMode: 'screen' } : {}}
-                        muted
-                        loop
-                        playsInline
-                        onClick={handlePreviewClick}
-                        onTimeUpdate={activeSegment.chromaKey?.enabled ? updateChromaCanvas : undefined}
-                      />
-                      {/* Chroma keyed canvas overlay */}
-                      {activeSegment.chromaKey?.enabled && (
-                        <canvas
-                          ref={chromaCanvasRef}
-                          className="absolute inset-0 w-full h-full object-contain"
+                  {activeSegment?.videoUrl && layerVisibility.animation && (() => {
+                    const transform = activeSegment.overlayTransform || DEFAULT_OVERLAY_TRANSFORM;
+                    const transformStyle = {
+                      transform: `translate(${transform.x}%, ${transform.y}%) scale(${transform.scale})`,
+                      ...(activeSegment.chromaKey?.enabled ? {} : { mixBlendMode: 'screen' as const })
+                    };
+                    return (
+                      <>
+                        {/* Hidden video for chroma key processing */}
+                        <video
+                          ref={overlayVideoRef}
+                          src={activeSegment.videoUrl}
+                          className={`absolute inset-0 w-full h-full object-contain ${activeSegment.chromaKey?.enabled ? 'hidden' : ''}`}
+                          style={transformStyle}
+                          muted
+                          loop
+                          playsInline
                           onClick={handlePreviewClick}
+                          onTimeUpdate={activeSegment.chromaKey?.enabled ? updateChromaCanvas : undefined}
                         />
-                      )}
-                    </>
-                  )}
+                        {/* Chroma keyed canvas overlay */}
+                        {activeSegment.chromaKey?.enabled && (
+                          <canvas
+                            ref={chromaCanvasRef}
+                            className="absolute inset-0 w-full h-full object-contain"
+                            style={{ transform: `translate(${transform.x}%, ${transform.y}%) scale(${transform.scale})` }}
+                            onClick={handlePreviewClick}
+                          />
+                        )}
+                      </>
+                    );
+                  })()}
 
                   {/* Static Image Overlay (when no video) - with chroma key support */}
-                  {activeSegment?.imageUrl && !activeSegment.videoUrl && layerVisibility.animation && (
-                    <>
-                      <img
-                        ref={overlayImageRef}
-                        src={activeSegment.imageUrl}
-                        alt="Overlay"
-                        className={`absolute inset-0 w-full h-full object-contain ${activeSegment.chromaKey?.enabled ? 'hidden' : ''}`}
-                        style={!activeSegment.chromaKey?.enabled ? { mixBlendMode: 'screen' } : {}}
-                        onClick={handlePreviewClick}
-                        onLoad={activeSegment.chromaKey?.enabled ? updateChromaCanvas : undefined}
-                      />
-                      {/* Chroma keyed canvas overlay */}
-                      {activeSegment.chromaKey?.enabled && (
-                        <canvas
-                          ref={chromaCanvasRef}
-                          className="absolute inset-0 w-full h-full object-contain"
+                  {activeSegment?.imageUrl && !activeSegment.videoUrl && layerVisibility.animation && (() => {
+                    const transform = activeSegment.overlayTransform || DEFAULT_OVERLAY_TRANSFORM;
+                    const transformStyle = {
+                      transform: `translate(${transform.x}%, ${transform.y}%) scale(${transform.scale})`,
+                      ...(activeSegment.chromaKey?.enabled ? {} : { mixBlendMode: 'screen' as const })
+                    };
+                    return (
+                      <>
+                        <img
+                          ref={overlayImageRef}
+                          src={activeSegment.imageUrl}
+                          alt="Overlay"
+                          className={`absolute inset-0 w-full h-full object-contain ${activeSegment.chromaKey?.enabled ? 'hidden' : ''}`}
+                          style={transformStyle}
                           onClick={handlePreviewClick}
+                          onLoad={activeSegment.chromaKey?.enabled ? updateChromaCanvas : undefined}
                         />
-                      )}
-                    </>
-                  )}
+                        {/* Chroma keyed canvas overlay */}
+                        {activeSegment.chromaKey?.enabled && (
+                          <canvas
+                            ref={chromaCanvasRef}
+                            className="absolute inset-0 w-full h-full object-contain"
+                            style={{ transform: `translate(${transform.x}%, ${transform.y}%) scale(${transform.scale})` }}
+                            onClick={handlePreviewClick}
+                          />
+                        )}
+                      </>
+                    );
+                  })()}
 
                   {/* Eyedropper mode indicator */}
                   {isPickingColor && (
@@ -1012,6 +1030,74 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                             isPickingColor={isPickingColor && activeSegment?.id === segment.id}
                             compact={true}
                           />
+                        )}
+
+                        {/* Overlay Position Controls */}
+                        {(segment.videoUrl || segment.imageUrl) && (
+                          <div className="bg-zinc-800/50 rounded-lg p-2 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1">
+                                <Move className="w-3 h-3 text-blue-400" />
+                                <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Position</span>
+                              </div>
+                              <button
+                                onClick={() => onUpdateOverlayTransform(segment.id, DEFAULT_OVERLAY_TRANSFORM)}
+                                className="text-[10px] text-zinc-500 hover:text-white flex items-center gap-1"
+                                title="Reset position"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                              </button>
+                            </div>
+                            {/* X Position */}
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-zinc-500 w-6">X</span>
+                              <input
+                                type="range"
+                                min="-50"
+                                max="50"
+                                value={(segment.overlayTransform || DEFAULT_OVERLAY_TRANSFORM).x}
+                                onChange={(e) => onUpdateOverlayTransform(segment.id, {
+                                  ...(segment.overlayTransform || DEFAULT_OVERLAY_TRANSFORM),
+                                  x: parseFloat(e.target.value)
+                                })}
+                                className="flex-1 h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                              />
+                              <span className="text-[10px] text-zinc-400 w-8 text-right">{(segment.overlayTransform || DEFAULT_OVERLAY_TRANSFORM).x}%</span>
+                            </div>
+                            {/* Y Position */}
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-zinc-500 w-6">Y</span>
+                              <input
+                                type="range"
+                                min="-50"
+                                max="50"
+                                value={(segment.overlayTransform || DEFAULT_OVERLAY_TRANSFORM).y}
+                                onChange={(e) => onUpdateOverlayTransform(segment.id, {
+                                  ...(segment.overlayTransform || DEFAULT_OVERLAY_TRANSFORM),
+                                  y: parseFloat(e.target.value)
+                                })}
+                                className="flex-1 h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                              />
+                              <span className="text-[10px] text-zinc-400 w-8 text-right">{(segment.overlayTransform || DEFAULT_OVERLAY_TRANSFORM).y}%</span>
+                            </div>
+                            {/* Scale */}
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-zinc-500 w-6">Size</span>
+                              <input
+                                type="range"
+                                min="0.2"
+                                max="2"
+                                step="0.1"
+                                value={(segment.overlayTransform || DEFAULT_OVERLAY_TRANSFORM).scale}
+                                onChange={(e) => onUpdateOverlayTransform(segment.id, {
+                                  ...(segment.overlayTransform || DEFAULT_OVERLAY_TRANSFORM),
+                                  scale: parseFloat(e.target.value)
+                                })}
+                                className="flex-1 h-1 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                              />
+                              <span className="text-[10px] text-zinc-400 w-8 text-right">{Math.round((segment.overlayTransform || DEFAULT_OVERLAY_TRANSFORM).scale * 100)}%</span>
+                            </div>
+                          </div>
                         )}
 
                         {/* Prompt */}

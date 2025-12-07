@@ -16,6 +16,19 @@ export const DEFAULT_CHROMA_KEY_SETTINGS: ChromaKeySettings = {
   edgeSoftness: 10
 };
 
+// Overlay position and transform settings
+export interface OverlayTransform {
+  x: number; // Horizontal position as percentage (-100 to 100, 0 = center)
+  y: number; // Vertical position as percentage (-100 to 100, 0 = center)
+  scale: number; // Scale factor (0.1 to 3, 1 = 100%)
+}
+
+export const DEFAULT_OVERLAY_TRANSFORM: OverlayTransform = {
+  x: 0,
+  y: 0,
+  scale: 1
+};
+
 // Image generation step progress
 export interface ImageGenerationProgress {
   step: 1 | 2; // Step 1: Scene with overlay, Step 2: Green screen
@@ -38,6 +51,7 @@ export interface Segment {
   duration: number; // Duration of the segment in seconds (default: 5)
   chromaKey?: ChromaKeySettings; // Per-segment chroma key settings
   generationProgress?: ImageGenerationProgress; // Track image generation step progress
+  overlayTransform?: OverlayTransform; // Position and scale of the overlay
 }
 
 export interface AnalysisResult {

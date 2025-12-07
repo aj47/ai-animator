@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AppState, AnalysisResult, Segment, GenerationPipelineState, ChromaKeySettings, ImageGenerationProgress } from './types';
+import { AppState, AnalysisResult, Segment, GenerationPipelineState, ChromaKeySettings, ImageGenerationProgress, OverlayTransform } from './types';
 import PromptSelector from './components/PromptSelector';
 import VeoGenerator from './components/VeoGenerator';
 import TimelineEditor from './components/TimelineEditor';
@@ -632,6 +632,20 @@ const App: React.FC = () => {
     }
   };
 
+  const handleUpdateOverlayTransform = (segmentId: string, transform: OverlayTransform) => {
+    setAnalysis(prev => prev ? ({
+      ...prev,
+      segments: prev.segments.map(s =>
+        s.id === segmentId ? { ...s, overlayTransform: transform } : s
+      )
+    }) : null);
+
+    // Also update active segment if viewing it
+    if (activeSegment && activeSegment.id === segmentId) {
+      setActiveSegment(prev => prev ? ({ ...prev, overlayTransform: transform }) : null);
+    }
+  };
+
   const handleReset = () => {
     logger.ui.buttonClick('reset');
     logger.ui.stateChange(state, AppState.IDLE);
@@ -669,6 +683,7 @@ const App: React.FC = () => {
         onUpdateSegmentDuration={handleUpdateSegmentDuration}
         onUpdateSegmentTimestamp={handleUpdateSegmentTimestamp}
         onUpdateChromaKey={handleUpdateChromaKey}
+        onUpdateOverlayTransform={handleUpdateOverlayTransform}
         hasKey={hasKey}
         onConnectKey={handleConnectKey}
         onGenerateSegmentImage={handleGenerateSegmentImage}
