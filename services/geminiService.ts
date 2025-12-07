@@ -195,9 +195,12 @@ export const generateSceneWithOverlay = async (
 /**
  * Step 2: Remove all original elements and replace background with green screen
  * Takes the scene with overlays and isolates only the new graphics on green screen
+ * Now receives both the original image and the prompt for better comparison
  */
 export const generateGreenScreenBackground = async (
   sceneImageBase64: string,
+  originalImageBase64: string,
+  promptText: string,
   aspectRatio: string,
   onProgress?: (msg: string) => void,
   segmentId?: string
@@ -205,24 +208,32 @@ export const generateGreenScreenBackground = async (
   const ai = getAI();
 
   logger.imageGen.step2Start(segmentId || 'unknown');
-  logger.api.request('generateGreenScreenBackground', { aspectRatio });
+  logger.api.request('generateGreenScreenBackground', { aspectRatio, promptLength: promptText.length });
   if (onProgress) onProgress("Step 2: Generating green screen background...");
 
   const response = await ai.models.generateContent({
     model: GENERATION_MODEL,
     contents: {
       parts: [
-        { text: `TASK: Create a chroma-keyable overlay by replacing the background with green screen.
+        { text: `TASK: Extract ONLY the newly added graphics and place them on a green screen background.
+
+        YOU ARE PROVIDED WITH TWO IMAGES:
+        - IMAGE 1 (first image): The ORIGINAL scene from the video - this shows the original background, people, furniture, etc.
+        - IMAGE 2 (second image): The MODIFIED scene with new educational graphics added on top.
+
+        THE NEW GRAPHICS THAT WERE ADDED ARE: ${promptText}
 
         INSTRUCTIONS:
-        1. Analyze the provided image which contains a scene with educational graphics/overlays (charts, text, diagrams, etc.).
-        2. IDENTIFY all the NEW graphics elements that were added to the scene (charts, 3D text, diagrams, illustrations, icons, etc.).
-        3. REMOVE the original scene elements completely - remove any people, the original background, furniture, walls, everything from the original video frame.
-        4. KEEP ONLY the educational graphics/overlay elements.
+        1. COMPARE the two images carefully to identify EXACTLY what elements are NEW (exist only in Image 2).
+        2. The new elements are: ${promptText}
+        3. REMOVE EVERYTHING that appears in Image 1 - this includes ALL people, backgrounds, furniture, walls, floors, and any original scene elements.
+        4. KEEP ONLY the NEW graphics/overlays that were added (the elements described above).
         5. Replace the ENTIRE background with a solid, flat CHROMA KEY GREEN (#00FF00).
-        6. The final output must contain ONLY the new generated graphics rendered against the solid green background.
+        6. The final output must contain ONLY the newly generated graphics rendered against the solid green background.
         7. EXTREMELY IMPORTANT: Ensure there is NO green spill, green reflections, or green tint on the graphics themselves. The edges must be sharp and clean for perfect chroma keying.
-        8. Maintain the exact position, size, and perspective of the graphics as they appeared in the input image.` },
+        8. Maintain the exact position, size, and perspective of the graphics as they appeared in Image 2.
+        9. If you see ANY remnants of the original scene (people, background, etc.), you MUST remove them completely.` },
+        { inlineData: { mimeType: 'image/png', data: originalImageBase64 } },
         { inlineData: { mimeType: 'image/png', data: sceneImageBase64 } }
       ]
     },
@@ -298,10 +309,13 @@ export const generateImageAsset = async (
   const sceneBase64 = sceneWithOverlay.split(',')[1];
 
   // Step 2: Replace background with green screen
+  // Pass both the original image and prompt so step 2 can compare and know what to keep
   if (onProgress) onProgress(2, "Step 2/2: Generating green screen background...", sceneWithOverlay);
 
   const greenScreenResult = await generateGreenScreenBackground(
     sceneBase64,
+    imageBase64,
+    promptText,
     aspectRatio,
     undefined,
     segmentId
