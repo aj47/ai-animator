@@ -131,3 +131,91 @@ export function getDefaultChromaKeySettings(): ChromaKeySettings {
   return { ...DEFAULT_CHROMA_KEY_SETTINGS };
 }
 
+/**
+ * Detect the dominant green color from an image data URL.
+ * Analyzes the image to find the most common green shade used as background.
+ * Returns a hex color string.
+ */
+export function detectDominantGreenFromDataUrl(dataUrl: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      if (!ctx) {
+        resolve('#00FF00'); // Default green
+        return;
+      }
+
+      // Use smaller dimensions for faster processing
+      const maxSize = 200;
+      const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+
+      // Count green-ish colors (where green channel dominates)
+      // Use color bucketing to group similar greens
+      const greenBuckets: Map<string, { count: number; totalR: number; totalG: number; totalB: number }> = new Map();
+
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+
+        // Check if this is a "green-ish" color
+        // Green should be significantly higher than red and blue
+        const greenExcess = g - Math.max(r, b);
+        if (greenExcess > 30 && g > 100) {
+          // Bucket by rounding to nearest 16 to group similar colors
+          const bucketR = Math.round(r / 16) * 16;
+          const bucketG = Math.round(g / 16) * 16;
+          const bucketB = Math.round(b / 16) * 16;
+          const key = `${bucketR},${bucketG},${bucketB}`;
+
+          const existing = greenBuckets.get(key);
+          if (existing) {
+            existing.count++;
+            existing.totalR += r;
+            existing.totalG += g;
+            existing.totalB += b;
+          } else {
+            greenBuckets.set(key, { count: 1, totalR: r, totalG: g, totalB: b });
+          }
+        }
+      }
+
+      // Find the most common green bucket
+      let maxCount = 0;
+      let dominantBucket: { count: number; totalR: number; totalG: number; totalB: number } | null = null;
+
+      greenBuckets.forEach((bucket) => {
+        if (bucket.count > maxCount) {
+          maxCount = bucket.count;
+          dominantBucket = bucket;
+        }
+      });
+
+      if (dominantBucket && dominantBucket.count > 0) {
+        // Calculate average color from the dominant bucket
+        const avgR = Math.round(dominantBucket.totalR / dominantBucket.count);
+        const avgG = Math.round(dominantBucket.totalG / dominantBucket.count);
+        const avgB = Math.round(dominantBucket.totalB / dominantBucket.count);
+        resolve(rgbToHex(avgR, avgG, avgB));
+      } else {
+        resolve('#00FF00'); // Default green if no green found
+      }
+    };
+
+    img.onerror = () => {
+      resolve('#00FF00'); // Default green on error
+    };
+
+    img.src = dataUrl;
+  });
+}
+

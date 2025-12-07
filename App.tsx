@@ -6,6 +6,8 @@ import VeoGenerator from './components/VeoGenerator';
 import TimelineEditor from './components/TimelineEditor';
 import { fileToBase64, extractFrameFromVideo, getClosestAspectRatio, formatTime } from './utils/videoUtils';
 import { analyzeVideoContent, generateImageAsset, generateVeoAnimation, checkApiKey, promptApiKey } from './services/geminiService';
+import { detectDominantGreenFromDataUrl } from './utils/chromaKey';
+import { DEFAULT_CHROMA_KEY_SETTINGS } from './types';
 import { Zap, AlertTriangle, Film } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -125,9 +127,16 @@ const App: React.FC = () => {
         const { base64 } = await extractFrameFromVideo(url, segment.timestamp);
         const imageUri = await generateImageAsset(segment.prompt, base64, aspectRatio);
 
+        // Detect dominant green color for chroma key
+        const dominantGreen = await detectDominantGreenFromDataUrl(imageUri);
+        const chromaKey = {
+          ...DEFAULT_CHROMA_KEY_SETTINGS,
+          keyColor: dominantGreen
+        };
+
         setAnalysis(prev => prev ? ({
           ...prev,
-          segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'image-success', imageUrl: imageUri } : s)
+          segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'image-success', imageUrl: imageUri, chromaKey } : s)
         }) : null);
 
         setPipelineState(prev => ({
@@ -220,16 +229,23 @@ const App: React.FC = () => {
         const { base64 } = await extractFrameFromVideo(videoUrl, segment.timestamp);
         const uri = await generateImageAsset(segment.prompt, base64, videoAspectRatio);
 
+        // Detect dominant green color for chroma key
+        const dominantGreen = await detectDominantGreenFromDataUrl(uri);
+        const chromaKey = {
+          ...DEFAULT_CHROMA_KEY_SETTINGS,
+          keyColor: dominantGreen
+        };
+
         setAnalysis(prev => prev ? ({
             ...prev,
-            segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'image-success', imageUrl: uri } : s)
+            segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'image-success', imageUrl: uri, chromaKey } : s)
         }) : null);
 
         // If this was triggered from Detail view, update active segment
         if (activeSegment && activeSegment.id === segment.id) {
-            setActiveSegment(prev => prev ? ({ ...prev, status: 'image-success', imageUrl: uri }) : null);
+            setActiveSegment(prev => prev ? ({ ...prev, status: 'image-success', imageUrl: uri, chromaKey }) : null);
         }
-        
+
         return uri;
 
     } catch (err: any) {
