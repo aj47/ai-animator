@@ -23,8 +23,8 @@ const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, 
   const overlayVideoRef = useRef<HTMLVideoElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Edit mode state
-  const [isEditingPrompt, setIsEditingPrompt] = useState(false);
+  // Edit mode state - default to edit mode if no image has been generated yet
+  const [isEditingPrompt, setIsEditingPrompt] = useState(!segment.imageUrl);
   const [editedPrompt, setEditedPrompt] = useState(segment.prompt);
   const [editedAnimationPrompt, setEditedAnimationPrompt] = useState(segment.animationPrompt);
 
@@ -48,6 +48,13 @@ const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, 
     setEditedPrompt(segment.prompt);
     setEditedAnimationPrompt(segment.animationPrompt);
   }, [segment.prompt, segment.animationPrompt]);
+
+  // Exit edit mode when image is generated
+  useEffect(() => {
+    if (segment.imageUrl) {
+      setIsEditingPrompt(false);
+    }
+  }, [segment.imageUrl]);
 
   // Sync chroma settings when segment changes
   useEffect(() => {
@@ -455,23 +462,32 @@ const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, 
                     {/* Edit Mode Actions */}
                     {isEditingPrompt && (
                       <div className="flex items-center justify-end gap-2 pt-2">
+                        {/* Only show Cancel/Save if there's already an image (re-editing) */}
+                        {segment.imageUrl && (
+                          <>
+                            <button
+                              onClick={handleCancelEdit}
+                              className="flex items-center gap-1 px-3 py-1.5 text-xs text-zinc-400 hover:text-white transition-colors"
+                            >
+                              <X className="w-3 h-3" /> Cancel
+                            </button>
+                            <button
+                              onClick={handleSavePrompts}
+                              className="flex items-center gap-1 px-3 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 text-white rounded-full transition-colors"
+                            >
+                              <Check className="w-3 h-3" /> Save
+                            </button>
+                          </>
+                        )}
                         <button
-                          onClick={handleCancelEdit}
-                          className="flex items-center gap-1 px-3 py-1.5 text-xs text-zinc-400 hover:text-white transition-colors"
-                        >
-                          <X className="w-3 h-3" /> Cancel
-                        </button>
-                        <button
-                          onClick={handleSavePrompts}
-                          className="flex items-center gap-1 px-3 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 text-white rounded-full transition-colors"
-                        >
-                          <Check className="w-3 h-3" /> Save
-                        </button>
-                        <button
-                          onClick={handleRegenerateWithNewPrompt}
+                          onClick={segment.imageUrl ? handleRegenerateWithNewPrompt : handleGenerateAndSave}
                           className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-600 hover:bg-green-500 text-white rounded-full transition-colors"
                         >
-                          <RefreshCw className="w-3 h-3" /> Save & Regenerate
+                          {segment.imageUrl ? (
+                            <><RefreshCw className="w-3 h-3" /> Save & Regenerate</>
+                          ) : (
+                            <><Sparkles className="w-3 h-3" /> Generate Image</>
+                          )}
                         </button>
                       </div>
                     )}

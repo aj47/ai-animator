@@ -23,7 +23,8 @@ const SegmentCard: React.FC<SegmentCardProps> = ({
   disabled,
   isBatchProcessing,
 }) => {
-  const [isEditing, setIsEditing] = useState(false);
+  // Default to edit mode if no image has been generated yet
+  const [isEditing, setIsEditing] = useState(!segment.imageUrl);
   const [editedPrompt, setEditedPrompt] = useState(segment.prompt);
   const [editedAnimationPrompt, setEditedAnimationPrompt] = useState(segment.animationPrompt);
 
@@ -55,6 +56,13 @@ const SegmentCard: React.FC<SegmentCardProps> = ({
       setEditedAnimationPrompt(segment.animationPrompt);
     }
   }, [segment.prompt, segment.animationPrompt, isEditing]);
+
+  // Exit edit mode when image is generated
+  React.useEffect(() => {
+    if (segment.imageUrl) {
+      setIsEditing(false);
+    }
+  }, [segment.imageUrl]);
 
   return (
     <div
@@ -152,23 +160,33 @@ const SegmentCard: React.FC<SegmentCardProps> = ({
           {/* Edit Actions */}
           {isEditing && (
             <div className="flex items-center gap-2 pt-2">
-              <button
-                onClick={handleCancel}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs text-zinc-400 hover:text-white transition-colors"
-              >
-                <X className="w-3 h-3" /> Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 text-white rounded-full transition-colors"
-              >
-                <Check className="w-3 h-3" /> Save
-              </button>
+              {/* Only show Cancel/Save if there's already an image (re-editing) */}
+              {hasImage && (
+                <>
+                  <button
+                    onClick={handleCancel}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs text-zinc-400 hover:text-white transition-colors"
+                  >
+                    <X className="w-3 h-3" /> Cancel
+                  </button>
+                  <button
+                    onClick={handleSave}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 text-white rounded-full transition-colors"
+                  >
+                    <Check className="w-3 h-3" /> Save
+                  </button>
+                </>
+              )}
               <button
                 onClick={handleSaveAndGenerate}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-600 hover:bg-green-500 text-white rounded-full transition-colors"
+                disabled={disabled || isBatchProcessing}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs bg-green-600 hover:bg-green-500 text-white rounded-full transition-colors disabled:opacity-50"
               >
-                <RefreshCw className="w-3 h-3" /> Save & Generate
+                {hasImage ? (
+                  <><RefreshCw className="w-3 h-3" /> Save & Regenerate</>
+                ) : (
+                  <><Sparkles className="w-3 h-3" /> Generate Image</>
+                )}
               </button>
             </div>
           )}
@@ -209,15 +227,13 @@ const SegmentCard: React.FC<SegmentCardProps> = ({
 
           {/* Action Buttons */}
           <div className="flex flex-wrap gap-2">
-            {!hasImage && !isGenerating && (
-              <button
-                onClick={() => onGenerateImage(segment)}
-                disabled={disabled || isBatchProcessing}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm font-medium transition-colors"
-              >
-                <Sparkles className="w-4 h-4" />
-                Generate Image
-              </button>
+            {/* When no image and in edit mode, the generate button is in the edit actions */}
+            {/* When generating, show status */}
+            {!hasImage && isGenerating && (
+              <div className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-zinc-400 text-sm">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {segment.status === 'generating-image' ? 'Generating...' : 'Processing...'}
+              </div>
             )}
 
             {hasImage && !isGenerating && (
