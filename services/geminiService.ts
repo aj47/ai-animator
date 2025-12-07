@@ -255,6 +255,17 @@ export const generateGreenScreenBackground = async (
   return imageUrl;
 };
 
+// Result type for the two-step image generation
+export interface ImageGenerationResult {
+  finalImageUrl: string; // The green screen result
+  intermediateImageUrl: string; // The scene with overlay (Step 1 result)
+}
+
+// Progress callback with step info
+export interface ImageGenerationProgressCallback {
+  (step: 1 | 2, message: string, intermediateImageUrl?: string): void;
+}
+
 /**
  * Main function: Two-step image generation process
  * Step 1: Recreate scene with overlay graphics in correct positions
@@ -264,34 +275,46 @@ export const generateImageAsset = async (
   promptText: string,
   imageBase64: string,
   aspectRatio: string,
-  onProgress?: (msg: string) => void,
+  onProgress?: ImageGenerationProgressCallback,
   segmentId?: string
-): Promise<string> => {
+): Promise<ImageGenerationResult> => {
   logger.imageGen.start(segmentId || 'unknown', promptText);
 
   // Step 1: Generate scene with overlays positioned correctly
+  if (onProgress) onProgress(1, "Step 1/2: Recreating scene with overlay graphics...");
+
   const sceneWithOverlay = await generateSceneWithOverlay(
     promptText,
     imageBase64,
     aspectRatio,
-    onProgress,
+    undefined, // onProgress for step functions is unused, we handle at this level
     segmentId
   );
+
+  // Notify step 1 complete with intermediate image
+  if (onProgress) onProgress(1, "Step 1/2: Complete! Scene with overlay generated.", sceneWithOverlay);
 
   // Extract base64 from the data URL for step 2
   const sceneBase64 = sceneWithOverlay.split(',')[1];
 
   // Step 2: Replace background with green screen
+  if (onProgress) onProgress(2, "Step 2/2: Generating green screen background...", sceneWithOverlay);
+
   const greenScreenResult = await generateGreenScreenBackground(
     sceneBase64,
     aspectRatio,
-    onProgress,
+    undefined,
     segmentId
   );
 
+  if (onProgress) onProgress(2, "Step 2/2: Complete! Green screen applied.", sceneWithOverlay);
+
   logger.imageGen.success(segmentId || 'unknown', greenScreenResult.length);
 
-  return greenScreenResult;
+  return {
+    finalImageUrl: greenScreenResult,
+    intermediateImageUrl: sceneWithOverlay
+  };
 };
 
 export const generateVeoAnimation = async (

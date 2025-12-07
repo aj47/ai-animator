@@ -967,11 +967,26 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                           </button>
                         )}
 
-                        {/* Show loading state when generating */}
+                        {/* Show loading state when generating with step progress */}
                         {(segment.status === 'generating-image' || segment.status === 'generating-video') && (
-                          <div className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md bg-zinc-800 text-zinc-400 text-xs">
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                            {segment.status === 'generating-image' ? 'Generating Image...' : 'Generating Video...'}
+                          <div className="flex-1 flex flex-col gap-1.5 px-2 py-2 rounded-md bg-zinc-800 text-zinc-400 text-xs">
+                            <div className="flex items-center gap-1.5">
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              {segment.status === 'generating-image' ? (
+                                <span>
+                                  Step {segment.generationProgress?.step || 1}/2: {segment.generationProgress?.message || 'Generating...'}
+                                </span>
+                              ) : (
+                                <span>Generating Video...</span>
+                              )}
+                            </div>
+                            {/* Step progress bar for image generation */}
+                            {segment.status === 'generating-image' && (
+                              <div className="flex gap-0.5">
+                                <div className={`h-1 flex-1 rounded-full transition-colors ${(segment.generationProgress?.step || 0) >= 1 ? 'bg-green-500' : 'bg-zinc-700'}`} />
+                                <div className={`h-1 flex-1 rounded-full transition-colors ${(segment.generationProgress?.step || 0) >= 2 ? 'bg-green-500' : 'bg-zinc-700'}`} />
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>

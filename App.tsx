@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AppState, AnalysisResult, Segment, GenerationPipelineState, ChromaKeySettings } from './types';
+import { AppState, AnalysisResult, Segment, GenerationPipelineState, ChromaKeySettings, ImageGenerationProgress } from './types';
 import PromptSelector from './components/PromptSelector';
 import VeoGenerator from './components/VeoGenerator';
 import TimelineEditor from './components/TimelineEditor';
@@ -150,18 +150,29 @@ const App: React.FC = () => {
       if (segment.status !== 'idle') continue;
 
       try {
-        // Update status to generating
+        // Update status to generating with initial progress
+        const initialProgress: ImageGenerationProgress = { step: 1, message: 'Starting image generation...' };
         logger.state.segmentStatusChange(segment.id, segment.status, 'generating-image');
         setAnalysis(prev => prev ? ({
           ...prev,
-          segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'generating-image' } : s)
+          segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'generating-image', generationProgress: initialProgress } : s)
         }) : null);
 
         const { base64 } = await extractFrameFromVideo(url, segment.timestamp);
-        const imageUri = await generateImageAsset(segment.prompt, base64, aspectRatio, undefined, segment.id);
+
+        // Progress callback to update segment with step info and intermediate image
+        const onProgress = (step: 1 | 2, message: string, intermediateImageUrl?: string) => {
+          const progress: ImageGenerationProgress = { step, message, intermediateImageUrl };
+          setAnalysis(prev => prev ? ({
+            ...prev,
+            segments: prev.segments.map(s => s.id === segment.id ? { ...s, generationProgress: progress } : s)
+          }) : null);
+        };
+
+        const result = await generateImageAsset(segment.prompt, base64, aspectRatio, onProgress, segment.id);
 
         // Detect dominant green color for chroma key
-        const dominantGreen = await detectDominantGreenFromDataUrl(imageUri);
+        const dominantGreen = await detectDominantGreenFromDataUrl(result.finalImageUrl);
         logger.imageGen.chromaDetected(segment.id, dominantGreen);
         const chromaKey = {
           ...DEFAULT_CHROMA_KEY_SETTINGS,
@@ -171,7 +182,13 @@ const App: React.FC = () => {
         logger.state.segmentStatusChange(segment.id, 'generating-image', 'image-success');
         setAnalysis(prev => prev ? ({
           ...prev,
-          segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'image-success', imageUrl: imageUri, chromaKey } : s)
+          segments: prev.segments.map(s => s.id === segment.id ? {
+            ...s,
+            status: 'image-success',
+            imageUrl: result.finalImageUrl,
+            chromaKey,
+            generationProgress: { step: 2, message: 'Complete!', intermediateImageUrl: result.intermediateImageUrl }
+          } : s)
         }) : null);
 
         setPipelineState(prev => {
@@ -186,7 +203,7 @@ const App: React.FC = () => {
         logger.state.segmentStatusChange(segment.id, 'generating-image', 'error');
         setAnalysis(prev => prev ? ({
           ...prev,
-          segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'error', error: err.message } : s)
+          segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'error', error: err.message, generationProgress: undefined } : s)
         }) : null);
       }
     }
@@ -268,37 +285,75 @@ const App: React.FC = () => {
         if(!success) return null;
     }
 
-    // Update Segment Status
+    // Update Segment Status with initial progress
+    const initialProgress: ImageGenerationProgress = { step: 1, message: 'Starting image generation...' };
     logger.state.segmentStatusChange(segment.id, segment.status, 'generating-image');
     setAnalysis(prev => prev ? ({
         ...prev,
-        segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'generating-image' } : s)
+        segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'generating-image', generationProgress: initialProgress } : s)
     }) : null);
+
+    // Also update active segment if in detail view
+    if (activeSegment && activeSegment.id === segment.id) {
+        setActiveSegment(prev => prev ? ({ ...prev, status: 'generating-image', generationProgress: initialProgress }) : null);
+    }
 
     try {
         const { base64 } = await extractFrameFromVideo(videoUrl, segment.timestamp);
-        const uri = await generateImageAsset(segment.prompt, base64, videoAspectRatio, undefined, segment.id);
+
+        // Progress callback to update segment with step info and intermediate image
+        const onProgress = (step: 1 | 2, message: string, intermediateImageUrl?: string) => {
+          const progress: ImageGenerationProgress = { step, message, intermediateImageUrl };
+          setAnalysis(prev => prev ? ({
+              ...prev,
+              segments: prev.segments.map(s => s.id === segment.id ? { ...s, generationProgress: progress } : s)
+          }) : null);
+          // Also update active segment if in detail view
+          if (activeSegment && activeSegment.id === segment.id) {
+              setActiveSegment(prev => prev ? ({ ...prev, generationProgress: progress }) : null);
+          }
+        };
+
+        const result = await generateImageAsset(segment.prompt, base64, videoAspectRatio, onProgress, segment.id);
 
         // Detect dominant green color for chroma key
-        const dominantGreen = await detectDominantGreenFromDataUrl(uri);
+        const dominantGreen = await detectDominantGreenFromDataUrl(result.finalImageUrl);
         logger.imageGen.chromaDetected(segment.id, dominantGreen);
         const chromaKey = {
           ...DEFAULT_CHROMA_KEY_SETTINGS,
           keyColor: dominantGreen
         };
 
+        const finalProgress: ImageGenerationProgress = {
+          step: 2,
+          message: 'Complete!',
+          intermediateImageUrl: result.intermediateImageUrl
+        };
+
         logger.state.segmentStatusChange(segment.id, 'generating-image', 'image-success');
         setAnalysis(prev => prev ? ({
             ...prev,
-            segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'image-success', imageUrl: uri, chromaKey } : s)
+            segments: prev.segments.map(s => s.id === segment.id ? {
+              ...s,
+              status: 'image-success',
+              imageUrl: result.finalImageUrl,
+              chromaKey,
+              generationProgress: finalProgress
+            } : s)
         }) : null);
 
         // If this was triggered from Detail view, update active segment
         if (activeSegment && activeSegment.id === segment.id) {
-            setActiveSegment(prev => prev ? ({ ...prev, status: 'image-success', imageUrl: uri, chromaKey }) : null);
+            setActiveSegment(prev => prev ? ({
+              ...prev,
+              status: 'image-success',
+              imageUrl: result.finalImageUrl,
+              chromaKey,
+              generationProgress: finalProgress
+            }) : null);
         }
 
-        return uri;
+        return result.finalImageUrl;
 
     } catch (err: any) {
         console.error(err);
@@ -306,8 +361,11 @@ const App: React.FC = () => {
         logger.state.segmentStatusChange(segment.id, 'generating-image', 'error');
         setAnalysis(prev => prev ? ({
             ...prev,
-            segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'error', error: err.message } : s)
+            segments: prev.segments.map(s => s.id === segment.id ? { ...s, status: 'error', error: err.message, generationProgress: undefined } : s)
         }) : null);
+        if (activeSegment && activeSegment.id === segment.id) {
+            setActiveSegment(prev => prev ? ({ ...prev, status: 'error', error: err.message, generationProgress: undefined }) : null);
+        }
         return null;
     }
   };

@@ -16,6 +16,13 @@ export const DEFAULT_CHROMA_KEY_SETTINGS: ChromaKeySettings = {
   edgeSoftness: 10
 };
 
+// Image generation step progress
+export interface ImageGenerationProgress {
+  step: 1 | 2; // Step 1: Scene with overlay, Step 2: Green screen
+  message: string; // Current progress message
+  intermediateImageUrl?: string; // Step 1 result (scene with overlay before green screen)
+}
+
 export interface Segment {
   id: string;
   timestamp: number; // Seconds
@@ -30,6 +37,7 @@ export interface Segment {
   error?: string;
   duration: number; // Duration of the segment in seconds (default: 5)
   chromaKey?: ChromaKeySettings; // Per-segment chroma key settings
+  generationProgress?: ImageGenerationProgress; // Track image generation step progress
 }
 
 export interface AnalysisResult {

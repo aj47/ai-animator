@@ -1,7 +1,7 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { Download, ArrowLeft, Play, Move, Film, Loader2, RefreshCw, Pencil, Check, X, Sparkles } from 'lucide-react';
-import { Segment, ChromaKeySettings, DEFAULT_CHROMA_KEY_SETTINGS } from '../types';
+import { Segment, ChromaKeySettings, DEFAULT_CHROMA_KEY_SETTINGS, ImageGenerationProgress } from '../types';
 import ChromaKeyControls from './ChromaKeyControls';
 import { sampleColorFromImage, createChromaKeyCanvas } from '../utils/chromaKey';
 
@@ -34,6 +34,7 @@ const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, 
   );
   const [isPickingColor, setIsPickingColor] = useState(false);
   const [showChromaPreview, setShowChromaPreview] = useState(false);
+  const [showIntermediateImage, setShowIntermediateImage] = useState(false);
 
   // Auto-seek to the timestamp when mounted
   useEffect(() => {
@@ -189,20 +190,44 @@ const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, 
               <div className="flex flex-col gap-2 flex-1 w-full max-w-lg">
                    <div className="flex items-center justify-between">
                      <span className="text-xs font-bold text-green-500 uppercase tracking-widest">
-                         {segment.videoUrl ? 'Green Screen Animation' : segment.imageUrl ? 'Green Screen Overlay' : 'Preview Area'}
+                         {showIntermediateImage
+                           ? 'Step 1: Scene with Overlay'
+                           : segment.videoUrl
+                             ? 'Green Screen Animation'
+                             : segment.imageUrl
+                               ? 'Step 2: Green Screen Overlay'
+                               : 'Preview Area'}
                      </span>
-                     {(segment.imageUrl || segment.videoUrl) && (
-                       <button
-                         onClick={() => setShowChromaPreview(!showChromaPreview)}
-                         className={`text-xs px-2 py-1 rounded-full transition-colors ${
-                           showChromaPreview
-                             ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
-                             : 'bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-700'
-                         }`}
-                       >
-                         {showChromaPreview ? 'Show Original' : 'Preview Key'}
-                       </button>
-                     )}
+                     <div className="flex items-center gap-2">
+                       {/* Toggle for intermediate image - show when we have both */}
+                       {segment.imageUrl && segment.generationProgress?.intermediateImageUrl && !segment.videoUrl && (
+                         <button
+                           onClick={() => {
+                             setShowIntermediateImage(!showIntermediateImage);
+                             setShowChromaPreview(false); // Reset chroma preview when toggling
+                           }}
+                           className={`text-xs px-2 py-1 rounded-full transition-colors ${
+                             showIntermediateImage
+                               ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                               : 'bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-700'
+                           }`}
+                         >
+                           {showIntermediateImage ? 'Show Final' : 'Show Step 1'}
+                         </button>
+                       )}
+                       {(segment.imageUrl || segment.videoUrl) && !showIntermediateImage && (
+                         <button
+                           onClick={() => setShowChromaPreview(!showChromaPreview)}
+                           className={`text-xs px-2 py-1 rounded-full transition-colors ${
+                             showChromaPreview
+                               ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
+                               : 'bg-zinc-800 text-zinc-400 hover:text-white border border-zinc-700'
+                           }`}
+                         >
+                           {showChromaPreview ? 'Show Original' : 'Preview Key'}
+                         </button>
+                       )}
+                     </div>
                    </div>
 
                   <div className={`relative aspect-video bg-black rounded-xl overflow-hidden shadow-2xl shadow-green-900/20 border ${isPickingColor ? 'border-purple-500 ring-2 ring-purple-500/30' : 'border-zinc-700'} ${isPickingColor ? 'cursor-crosshair' : ''}`}>
@@ -244,30 +269,109 @@ const VeoGenerator: React.FC<VeoGeneratorProps> = ({ segment, originalVideoUrl, 
                         </>
                       ) : segment.imageUrl ? (
                         <>
-                          {/* Hidden image for chroma key processing */}
-                          <img
-                            ref={overlayImageRef}
-                            src={segment.imageUrl}
-                            alt="Generated Green Screen Asset"
-                            className={`w-full h-full object-contain ${showChromaPreview ? 'hidden' : ''}`}
-                            onClick={handleImageClick}
-                            onLoad={() => showChromaPreview && updateChromaPreview()}
-                          />
-                          {/* Chroma keyed canvas overlay */}
-                          {showChromaPreview && (
-                            <canvas
-                              ref={previewCanvasRef}
-                              className="absolute inset-0 w-full h-full object-contain"
-                              onClick={handleImageClick}
-                            />
+                          {/* Show intermediate image (Step 1) when toggled */}
+                          {showIntermediateImage && segment.generationProgress?.intermediateImageUrl ? (
+                            <div className="relative w-full h-full">
+                              <img
+                                src={segment.generationProgress.intermediateImageUrl}
+                                alt="Step 1: Scene with overlay"
+                                className="w-full h-full object-contain"
+                              />
+                              {/* Step indicator badge */}
+                              <div className="absolute top-2 left-2 bg-amber-500/90 text-white text-xs px-2 py-1 rounded-full flex items-center gap-1">
+                                <span className="font-bold">Step 1</span>
+                                <span className="opacity-75">Scene + Overlay</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              {/* Final image (Step 2) - default view */}
+                              <img
+                                ref={overlayImageRef}
+                                src={segment.imageUrl}
+                                alt="Generated Green Screen Asset"
+                                className={`w-full h-full object-contain ${showChromaPreview ? 'hidden' : ''}`}
+                                onClick={handleImageClick}
+                                onLoad={() => showChromaPreview && updateChromaPreview()}
+                              />
+                              {/* Chroma keyed canvas overlay */}
+                              {showChromaPreview && (
+                                <canvas
+                                  ref={previewCanvasRef}
+                                  className="absolute inset-0 w-full h-full object-contain"
+                                  onClick={handleImageClick}
+                                />
+                              )}
+                            </>
                           )}
                         </>
                       ) : (
                           <div className="w-full h-full flex flex-col items-center justify-center text-zinc-500">
-                            {isGenerating ? (
+                            {isGenerating && segment.status === 'generating-image' ? (
+                              <div className="w-full h-full flex flex-col">
+                                {/* Show intermediate image if available */}
+                                {segment.generationProgress?.intermediateImageUrl ? (
+                                  <div className="relative w-full h-full">
+                                    <img
+                                      src={segment.generationProgress.intermediateImageUrl}
+                                      alt="Step 1: Scene with overlay"
+                                      className="w-full h-full object-contain opacity-80"
+                                    />
+                                    {/* Overlay progress indicator */}
+                                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-4">
+                                      <div className="flex items-center gap-3">
+                                        <Loader2 className="w-5 h-5 animate-spin text-green-400" />
+                                        <div className="flex-1">
+                                          <div className="flex items-center gap-2 mb-1">
+                                            <span className="text-xs font-bold text-green-400">
+                                              Step {segment.generationProgress?.step || 1} of 2
+                                            </span>
+                                          </div>
+                                          <p className="text-xs text-zinc-300">
+                                            {segment.generationProgress?.message || 'Processing...'}
+                                          </p>
+                                          {/* Step progress bar */}
+                                          <div className="flex gap-1 mt-2">
+                                            <div className={`h-1 flex-1 rounded-full ${segment.generationProgress?.step >= 1 ? 'bg-green-500' : 'bg-zinc-700'}`} />
+                                            <div className={`h-1 flex-1 rounded-full ${segment.generationProgress?.step >= 2 ? 'bg-green-500' : 'bg-zinc-700'}`} />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    {/* Step 1 complete badge */}
+                                    <div className="absolute top-2 left-2 bg-green-500/90 text-white text-xs px-2 py-1 rounded-full flex items-center gap-1">
+                                      <Check className="w-3 h-3" />
+                                      Step 1 Complete
+                                    </div>
+                                  </div>
+                                ) : (
+                                  /* No intermediate image yet - show simple progress */
+                                  <div className="w-full h-full flex flex-col items-center justify-center p-6">
+                                    <Loader2 className="w-12 h-12 animate-spin text-green-500 mb-4" />
+                                    <div className="text-center">
+                                      <span className="text-sm font-medium text-white block mb-1">
+                                        Step {segment.generationProgress?.step || 1} of 2
+                                      </span>
+                                      <p className="text-xs text-zinc-400 mb-3">
+                                        {segment.generationProgress?.message || 'Starting image generation...'}
+                                      </p>
+                                      {/* Step progress bar */}
+                                      <div className="flex gap-1 w-32 mx-auto">
+                                        <div className={`h-1.5 flex-1 rounded-full ${segment.generationProgress?.step >= 1 ? 'bg-green-500 animate-pulse' : 'bg-zinc-700'}`} />
+                                        <div className={`h-1.5 flex-1 rounded-full ${segment.generationProgress?.step >= 2 ? 'bg-green-500 animate-pulse' : 'bg-zinc-700'}`} />
+                                      </div>
+                                      <div className="flex justify-between w-32 mx-auto mt-1">
+                                        <span className="text-[10px] text-zinc-500">Scene</span>
+                                        <span className="text-[10px] text-zinc-500">Green Screen</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ) : isGenerating ? (
                               <>
-                                <Loader2 className="w-12 h-12 animate-spin text-green-500 mb-3" />
-                                <span className="text-sm">Generating image...</span>
+                                <Loader2 className="w-12 h-12 animate-spin text-blue-500 mb-3" />
+                                <span className="text-sm">Generating animation...</span>
                               </>
                             ) : (
                               <>
