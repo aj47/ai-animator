@@ -149,17 +149,19 @@ export const generateSceneWithOverlay = async (
     model: GENERATION_MODEL,
     contents: {
       parts: [
-        { text: `${promptText}.
+        { text: `TASK: Add the following educational overlay graphic to this scene:
 
-        TASK: Recreate this scene with new educational overlay graphics positioned correctly.
+**GRAPHIC TO GENERATE: ${promptText}**
 
-        INSTRUCTIONS:
-        1. Carefully analyze the provided input image to understand the 3D perspective, lighting conditions, camera angle, and the position of all elements (speaker, background, objects).
-        2. RECREATE the entire scene faithfully - keep the speaker/subject, the background, and all original elements.
-        3. ADD the requested educational graphic elements (charts, text, diagrams, highlights, illustrations) positioned correctly in this 3D space.
-        4. Position the new graphics in a way that makes sense spatially - floating next to the subject, in the foreground, or as overlays that don't obscure the main subject.
-        5. Ensure the lighting, shadows, and perspective of the new elements match the original scene perfectly.
-        6. The output should look like an augmented reality view where the new graphics exist naturally in the original scene.` },
+INSTRUCTIONS:
+1. Analyze the input image to understand the 3D perspective, lighting, camera angle, and position of all elements.
+2. KEEP the original scene EXACTLY as-is - same speaker/subject, background, and all original elements.
+3. ADD ONLY the specific graphic described above: "${promptText}"
+4. Position this new graphic floating naturally in the scene - next to the subject or in an unobstructed area.
+5. Make sure the new graphic's lighting, shadows, and perspective match the scene.
+6. The graphic should look like an AR overlay that exists naturally in the 3D space.
+
+IMPORTANT: The output must clearly show "${promptText}" as a distinct overlay element on top of the original scene.` },
         { inlineData: { mimeType: 'image/png', data: imageBase64 } }
       ]
     },
