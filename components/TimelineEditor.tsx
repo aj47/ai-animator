@@ -922,54 +922,56 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         </div>
                       </div>
 
-                      {/* Segment Details - shown when segment has content */}
-                      {segment.status.includes('success') && (
-                        <div className="mt-3 space-y-2" onClick={(e) => e.stopPropagation()}>
-                          {/* Preview thumbnail */}
-                          {(segment.videoUrl || segment.imageUrl) && (
-                            <div className="aspect-video bg-black rounded-lg overflow-hidden border border-zinc-700">
-                              {segment.videoUrl ? (
-                                <video
-                                  src={segment.videoUrl}
-                                  className="w-full h-full object-contain"
-                                  muted
-                                  loop
-                                  playsInline
-                                  autoPlay
-                                />
-                              ) : segment.imageUrl ? (
-                                <img
-                                  src={segment.imageUrl}
-                                  alt={segment.topic}
-                                  className="w-full h-full object-contain"
-                                />
-                              ) : null}
-                            </div>
-                          )}
+                      {/* Segment Details - always shown */}
+                      <div className="mt-3 space-y-2" onClick={(e) => e.stopPropagation()}>
+                        {/* Preview thumbnail */}
+                        {(segment.videoUrl || segment.imageUrl) ? (
+                          <div className="aspect-video bg-black rounded-lg overflow-hidden border border-zinc-700">
+                            {segment.videoUrl ? (
+                              <video
+                                src={segment.videoUrl}
+                                className="w-full h-full object-contain"
+                                muted
+                                loop
+                                playsInline
+                                autoPlay
+                              />
+                            ) : segment.imageUrl ? (
+                              <img
+                                src={segment.imageUrl}
+                                alt={segment.topic}
+                                className="w-full h-full object-contain"
+                              />
+                            ) : null}
+                          </div>
+                        ) : (
+                          <div className="aspect-video bg-zinc-800/50 rounded-lg border border-zinc-700 flex items-center justify-center">
+                            <span className="text-xs text-zinc-500">No preview yet</span>
+                          </div>
+                        )}
 
-                          {/* Prompt */}
-                          {segment.prompt && (
-                            <div className="bg-zinc-800/50 rounded-lg p-2">
-                              <div className="flex items-center gap-1 mb-1">
-                                <Sparkles className="w-3 h-3 text-purple-400" />
-                                <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Image Prompt</span>
-                              </div>
-                              <p className="text-xs text-zinc-300 line-clamp-3">{segment.prompt}</p>
+                        {/* Prompt */}
+                        {segment.prompt && (
+                          <div className="bg-zinc-800/50 rounded-lg p-2">
+                            <div className="flex items-center gap-1 mb-1">
+                              <Sparkles className="w-3 h-3 text-purple-400" />
+                              <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Image Prompt</span>
                             </div>
-                          )}
+                            <p className="text-xs text-zinc-300 line-clamp-3">{segment.prompt}</p>
+                          </div>
+                        )}
 
-                          {/* Animation Prompt */}
-                          {segment.animationPrompt && (
-                            <div className="bg-zinc-800/50 rounded-lg p-2">
-                              <div className="flex items-center gap-1 mb-1">
-                                <Film className="w-3 h-3 text-green-400" />
-                                <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Animation</span>
-                              </div>
-                              <p className="text-xs text-zinc-300 line-clamp-2">{segment.animationPrompt}</p>
+                        {/* Animation Prompt */}
+                        {segment.animationPrompt && (
+                          <div className="bg-zinc-800/50 rounded-lg p-2">
+                            <div className="flex items-center gap-1 mb-1">
+                              <Film className="w-3 h-3 text-green-400" />
+                              <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Animation</span>
                             </div>
-                          )}
-                        </div>
-                      )}
+                            <p className="text-xs text-zinc-300 line-clamp-2">{segment.animationPrompt}</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
