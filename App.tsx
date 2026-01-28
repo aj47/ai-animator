@@ -5,10 +5,11 @@ import PromptSelector from './components/PromptSelector';
 import VeoGenerator from './components/VeoGenerator';
 import TimelineEditor from './components/TimelineEditor';
 import { fileToBase64, extractFrameFromVideo, getClosestAspectRatio, formatTime } from './utils/videoUtils';
-import { analyzeVideoContent, generateImageAsset, generateVeoAnimation, checkApiKey, promptApiKey } from './services/geminiService';
+import { analyzeVideoContent, generateImageAsset, generateVideoAnimation, checkApiKey, promptApiKey, getCurrentProvider, setCurrentProvider, AIProvider } from './services/aiProvider';
+import { initFalClient } from './services/falService';
 import { detectDominantGreenFromDataUrl } from './utils/chromaKey';
 import { DEFAULT_CHROMA_KEY_SETTINGS } from './types';
-import { Zap, AlertTriangle, Film } from 'lucide-react';
+import { Zap, AlertTriangle, Film, ChevronDown } from 'lucide-react';
 import { logger } from './utils/logger';
 
 const App: React.FC = () => {
@@ -25,6 +26,9 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [hasKey, setHasKey] = useState(false);
 
+  // Provider state
+  const [currentProviderState, setCurrentProviderState] = useState<AIProvider>(getCurrentProvider());
+
   // Generation pipeline state
   const [pipelineState, setPipelineState] = useState<GenerationPipelineState>({
     isRunning: false,
@@ -35,11 +39,30 @@ const App: React.FC = () => {
   const stopGenerationRef = useRef(false);
 
   useEffect(() => {
+    // Initialize FAL client if FAL is selected
+    if (currentProviderState === 'fal') {
+      initFalClient();
+    }
     checkApiKey().then(setHasKey);
     return () => {
       if (videoUrl) URL.revokeObjectURL(videoUrl);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Handler to switch providers
+  const handleProviderChange = async (provider: AIProvider) => {
+    setCurrentProvider(provider);
+    setCurrentProviderState(provider);
+
+    // Initialize FAL client if switching to FAL
+    if (provider === 'fal') {
+      initFalClient();
+    }
+
+    // Re-check API key for new provider
+    const hasValidKey = await checkApiKey();
+    setHasKey(hasValidKey);
+  };
 
   const handleConnectKey = async () => {
     logger.ui.buttonClick('connectKey');
@@ -243,7 +266,7 @@ const App: React.FC = () => {
         const mimeType = imageUrl.split(':')[1].split(';')[0]; // likely image/png
 
         // Pass videoAspectRatio to respect input dimensions
-        const videoUri = await generateVeoAnimation(segment.animationPrompt, base64Data, mimeType, videoAspectRatio, segment.id);
+        const videoUri = await generateVideoAnimation(segment.animationPrompt, base64Data, mimeType, videoAspectRatio, segment.id);
 
         logger.state.segmentStatusChange(segment.id, 'generating-video', 'video-success');
         setAnalysis(prev => prev ? ({
@@ -437,24 +460,44 @@ const App: React.FC = () => {
   // Timeline-first rendering: TimelineEditor is the main view for IDLE, ANALYZING, and TIMELINE_EDITOR states
   // It handles empty state (file picker), loading state, and full editor in one component
 
+  // Provider toggle dropdown component
+  const ProviderToggle = () => (
+    <div className="fixed top-4 right-4 z-50">
+      <div className="relative">
+        <select
+          value={currentProviderState}
+          onChange={(e) => handleProviderChange(e.target.value as AIProvider)}
+          className="appearance-none bg-zinc-900 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-2 pr-8 cursor-pointer hover:border-zinc-600 focus:outline-none focus:border-pink-500 transition-colors"
+        >
+          <option value="gemini">Gemini</option>
+          <option value="fal">FAL</option>
+        </select>
+        <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
+      </div>
+    </div>
+  );
+
   if (state === AppState.IDLE || state === AppState.ANALYZING || state === AppState.TIMELINE_EDITOR) {
     return (
-      <TimelineEditor
-        videoUrl={videoUrl}
-        analysis={analysis}
-        onFileSelect={handleFileSelect}
-        isLoading={state === AppState.ANALYZING}
-        statusMessage={statusMessage}
-        pipelineState={pipelineState}
-        onUpdateSegmentDuration={handleUpdateSegmentDuration}
-        onUpdateSegmentTimestamp={handleUpdateSegmentTimestamp}
-        onUpdateChromaKey={handleUpdateChromaKey}
-        onUpdateOverlayTransform={handleUpdateOverlayTransform}
-        hasKey={hasKey}
-        onConnectKey={handleConnectKey}
-        onGenerateSegmentImage={handleGenerateSegmentImage}
-        onGenerateSegmentVideo={handleGenerateSegmentVideo}
-      />
+      <>
+        <ProviderToggle />
+        <TimelineEditor
+          videoUrl={videoUrl}
+          analysis={analysis}
+          onFileSelect={handleFileSelect}
+          isLoading={state === AppState.ANALYZING}
+          statusMessage={statusMessage}
+          pipelineState={pipelineState}
+          onUpdateSegmentDuration={handleUpdateSegmentDuration}
+          onUpdateSegmentTimestamp={handleUpdateSegmentTimestamp}
+          onUpdateChromaKey={handleUpdateChromaKey}
+          onUpdateOverlayTransform={handleUpdateOverlayTransform}
+          hasKey={hasKey}
+          onConnectKey={handleConnectKey}
+          onGenerateSegmentImage={handleGenerateSegmentImage}
+          onGenerateSegmentVideo={handleGenerateSegmentVideo}
+        />
+      </>
     );
   }
 
@@ -473,6 +516,18 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Provider Toggle */}
+            <div className="relative">
+              <select
+                value={currentProviderState}
+                onChange={(e) => handleProviderChange(e.target.value as AIProvider)}
+                className="appearance-none bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-1.5 pr-8 cursor-pointer hover:border-zinc-600 focus:outline-none focus:border-pink-500 transition-colors"
+              >
+                <option value="gemini">Gemini</option>
+                <option value="fal">FAL</option>
+              </select>
+              <ChevronDown className="absolute right-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
+            </div>
             {state !== AppState.ERROR && (
               <button onClick={handleBackToTimeline} className="text-sm text-zinc-400 hover:text-white">
                 ← Back to Timeline
